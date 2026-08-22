@@ -1,4 +1,4 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.db import get_connection
@@ -10,13 +10,56 @@ from app.routers.attractions import router as attractions_router
 from app.routers.transport import router as transport_router
 from app.routers.search import router as search_router
 from app.routers.semantic_search import router as semantic_search_router
+from fastapi.responses import JSONResponse
+from psycopg import Error as PsycopgError
+from app.logger import get_logger
 
+logger = get_logger(__name__)
 
 app = FastAPI(
     title="H4U API",
     version="0.3.0"
 )
 
+@app.exception_handler(PsycopgError)
+async def database_error_handler(
+    request: Request,
+    exc: PsycopgError,
+):
+    logger.exception(
+        "database_error path=%s",
+        request.url.path,
+    )
+
+    return JSONResponse(
+        status_code=500,
+        content={
+            "error": "database_error",
+            "detail": (
+                "No se pudo procesar la solicitud "
+                "en la base de datos."
+            ),
+        },
+    )
+
+
+@app.exception_handler(Exception)
+async def general_error_handler(
+    request: Request,
+    exc: Exception,
+):
+    logger.exception(
+        "internal_server_error path=%s",
+        request.url.path,
+    )
+
+    return JSONResponse(
+        status_code=500,
+        content={
+            "error": "internal_server_error",
+            "detail": "Ocurrió un error interno.",
+        },
+    )
 
 app.add_middleware(
     CORSMiddleware,
