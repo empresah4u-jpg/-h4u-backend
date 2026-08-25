@@ -1,0 +1,28 @@
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: h4u-postgres
+
+    restart: unless-stopped
+
+    environment:
+      POSTGRES_DB: h4u
+      POSTGRES_USER: h4u
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+
+    ports:
+      - "5432:5432"
+
+    volumes:
+      - h4u_pgdata:/var/lib/postgresql/data
+
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U h4u -d h4u"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  h4u_pgdata:
+    external: true
+    name: postgresql_h4u_pgdata

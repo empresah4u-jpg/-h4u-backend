@@ -20,3 +20,18 @@ __pycache__/
 .vscode/
 .idea/
 
+# H4U datasets
+
+data/raw/*
+
+data/processed/*
+
+data/samples/*
+
+# Mantener estructura de carpetas
+
+!data/raw/.gitkeep
+
+!data/processed/.gitkeep
+
+!data/samples/.gitkeep
