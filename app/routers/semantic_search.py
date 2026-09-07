@@ -1,3 +1,5 @@
+import re
+import unicodedata
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query
@@ -14,12 +16,109 @@ router = APIRouter(
 
 logger = get_logger(__name__)
 
-MODEL_NAME = "sentence-transformers/all-MiniLM-L6-v2"
+
+MODEL_NAME = (
+    "sentence-transformers/"
+    "paraphrase-multilingual-MiniLM-L12-v2"
+)
+
 model = SentenceTransformer(MODEL_NAME)
 
 
+STOP_WORDS = {
+    # Español
+    "quiero",
+    "comer",
+    "hacer",
+    "para",
+    "con",
+    "una",
+    "uno",
+    "unos",
+    "unas",
+    "del",
+    "las",
+    "los",
+    "que",
+
+    # Inglés
+    "the",
+    "want",
+    "near",
+    "with",
+    "from",
+    "this",
+    "that",
+
+    # Portugués
+    "quero",
+    "fazer",
+    "uma",
+    "um",
+    "de",
+    "do",
+    "da",
+    "dos",
+    "das",
+    "com",
+}
+
+
 def vector_to_pg(vector):
-    return "[" + ",".join(str(float(x)) for x in vector) + "]"
+    return "[" + ",".join(
+        str(float(x))
+        for x in vector
+    ) + "]"
+
+
+def normalize_text(text):
+    text = text.lower()
+
+    text = "".join(
+        char
+        for char in unicodedata.normalize("NFD", text)
+        if unicodedata.category(char) != "Mn"
+    )
+
+    return re.findall(r"\w+", text)
+
+
+def get_keywords(query):
+    return [
+        word
+        for word in normalize_text(query)
+        if word not in STOP_WORDS
+        and len(word) >= 4
+    ]
+
+
+def keyword_score(query, content):
+    query_words = get_keywords(query)
+    content_words = normalize_text(content)
+
+    if not query_words:
+        return 0.0
+
+    matches = 0
+
+    for query_word in query_words:
+        for content_word in content_words:
+
+            is_related = (
+                content_word.startswith(query_word)
+                or query_word.startswith(content_word)
+            )
+
+            length_difference = abs(
+                len(content_word)
+                - len(query_word)
+            )
+
+            if is_related and length_difference <= 4:
+                matches += 1
+                break
+
+    return matches / len(query_words)
 
 
 @router.get("")
@@ -28,6 +127,7 @@ def semantic_search(
     category: Optional[str] = Query(default=None),
     limit: int = Query(default=10, ge=1, le=50),
 ):
+
     allowed_categories = {
         "hotel",
         "restaurant",
@@ -36,6 +136,7 @@ def semantic_search(
     }
 
     if category and category not in allowed_categories:
+
         logger.warning(
             "semantic_search_invalid_category category=%s",
             category,
@@ -50,52 +151,181 @@ def semantic_search(
         )
 
     try:
+
+        # -------------------------------------------------
+        # 1. Generar embedding de la consulta
+        # -------------------------------------------------
+
         query_embedding = model.encode(
             q,
             normalize_embeddings=True,
         )
 
-        pg_vector = vector_to_pg(query_embedding)
+        pg_vector = vector_to_pg(
+            query_embedding
+        )
 
         with get_connection() as conn:
+
             with conn.cursor() as cur:
+
+                # -----------------------------------------
+                # 2. Búsqueda semántica
+                # -----------------------------------------
 
                 sql = """
                     SELECT
                         entity_type,
                         entity_id,
                         content,
-                        1 - (embedding <=> %s::vector) AS similarity
+                        1 - (
+                            embedding <=> %s::vector
+                        ) AS similarity
                     FROM entity_embeddings
                     WHERE embedding IS NOT NULL
                 """
 
-                params = [pg_vector]
+                params = [
+                    pg_vector
+                ]
 
                 if category:
-                    sql += " AND entity_type = %s"
-                    params.append(category)
+
+                    sql += """
+                        AND entity_type = %s
+                    """
+
+                    params.append(
+                        category
+                    )
+
+                candidate_limit = min(
+                    max(
+                        limit * 10,
+                        30,
+                    ),
+                    100,
+                )
 
                 sql += """
-                    ORDER BY embedding <=> %s::vector
+                    ORDER BY
+                        embedding <=> %s::vector
                     LIMIT %s
                 """
 
-                params.extend([pg_vector, limit])
+                params.extend(
+                    [
+                        pg_vector,
+                        candidate_limit,
+                    ]
+                )
 
-                cur.execute(sql, params)
-                semantic_rows = cur.fetchall()
+                cur.execute(
+                    sql,
+                    params,
+                )
+
+                semantic_rows = (
+                    cur.fetchall()
+                )
+
+                # -----------------------------------------
+                # 3. Búsqueda léxica
+                # -----------------------------------------
+
+                keywords = get_keywords(q)
+
+                lexical_rows = []
+
+                for keyword in keywords:
+
+                    lexical_sql = """
+                        SELECT
+                            entity_type,
+                            entity_id,
+                            content,
+                            1 - (
+                                embedding <=> %s::vector
+                            ) AS similarity
+                        FROM entity_embeddings
+                        WHERE embedding IS NOT NULL
+                          AND content ILIKE %s
+                    """
+
+                    lexical_params = [
+                        pg_vector,
+                        f"%{keyword}%",
+                    ]
+
+                    if category:
+
+                        lexical_sql += """
+                            AND entity_type = %s
+                        """
+
+                        lexical_params.append(
+                            category
+                        )
+
+                    lexical_sql += """
+                        ORDER BY
+                            embedding <=> %s::vector
+                        LIMIT 20
+                    """
+
+                    lexical_params.append(
+                        pg_vector
+                    )
+
+                    cur.execute(
+                        lexical_sql,
+                        lexical_params,
+                    )
+
+                    lexical_rows.extend(
+                        cur.fetchall()
+                    )
+
+                # -----------------------------------------
+                # 4. Combinar candidatos y eliminar
+                #    duplicados
+                # -----------------------------------------
+
+                candidate_map = {}
+
+                for candidate in (
+                    semantic_rows
+                    + lexical_rows
+                ):
+
+                    key = (
+                        candidate[0],
+                        candidate[1],
+                    )
+
+                    candidate_map[
+                        key
+                    ] = candidate
+
+                candidates = list(
+                    candidate_map.values()
+                )
 
                 results = []
+
+                # -----------------------------------------
+                # 5. Recuperar información real
+                # -----------------------------------------
 
                 for (
                     entity_type,
                     entity_id,
                     content,
                     similarity,
-                ) in semantic_rows:
+                ) in candidates:
 
                     if entity_type == "hotel":
+
                         cur.execute(
                             """
                             SELECT
@@ -114,12 +344,15 @@ def semantic_search(
                             FROM hotels
                             WHERE id = %s
                             """,
-                            (entity_id,),
+                            (
+                                entity_id,
+                            ),
                         )
 
                         row = cur.fetchone()
 
                         if row:
+
                             results.append(
                                 {
                                     "entity_type": "hotel",
@@ -155,10 +388,12 @@ def semantic_search(
                                         float(similarity),
                                         4,
                                     ),
+                                    "_content": content,
                                 }
                             )
 
                     elif entity_type == "restaurant":
+
                         cur.execute(
                             """
                             SELECT
@@ -177,12 +412,15 @@ def semantic_search(
                             FROM restaurants
                             WHERE id = %s
                             """,
-                            (entity_id,),
+                            (
+                                entity_id,
+                            ),
                         )
 
                         row = cur.fetchone()
 
                         if row:
+
                             results.append(
                                 {
                                     "entity_type": "restaurant",
@@ -214,10 +452,12 @@ def semantic_search(
                                         float(similarity),
                                         4,
                                     ),
+                                    "_content": content,
                                 }
                             )
 
                     elif entity_type == "tour":
+
                         cur.execute(
                             """
                             SELECT
@@ -238,12 +478,15 @@ def semantic_search(
                                 ON op.id = t.tour_operator_id
                             WHERE t.id = %s
                             """,
-                            (entity_id,),
+                            (
+                                entity_id,
+                            ),
                         )
 
                         row = cur.fetchone()
 
                         if row:
+
                             results.append(
                                 {
                                     "entity_type": "tour",
@@ -273,10 +516,12 @@ def semantic_search(
                                         float(similarity),
                                         4,
                                     ),
+                                    "_content": content,
                                 }
                             )
 
                     elif entity_type == "attraction":
+
                         cur.execute(
                             """
                             SELECT
@@ -295,12 +540,15 @@ def semantic_search(
                             FROM attractions
                             WHERE id = %s
                             """,
-                            (entity_id,),
+                            (
+                                entity_id,
+                            ),
                         )
 
                         row = cur.fetchone()
 
                         if row:
+
                             results.append(
                                 {
                                     "entity_type": "attraction",
@@ -336,11 +584,67 @@ def semantic_search(
                                         float(similarity),
                                         4,
                                     ),
+                                    "_content": content,
                                 }
                             )
 
+        # -------------------------------------------------
+        # 6. Ranking híbrido
+        # -------------------------------------------------
+
+        for item in results:
+
+            lexical_score = keyword_score(
+                q,
+                item["_content"],
+            )
+
+            item[
+                "keyword_score"
+            ] = round(
+                lexical_score,
+                4,
+            )
+
+            item[
+                "final_score"
+            ] = round(
+                (
+                    item["similarity"]
+                    * 0.8
+                    + lexical_score
+                    * 0.2
+                ),
+                4,
+            )
+
+        results.sort(
+            key=lambda item: item[
+                "final_score"
+            ],
+            reverse=True,
+        )
+
+        results = results[
+            :limit
+        ]
+
+        # No exponer el texto usado
+        # internamente para embeddings
+
+        for item in results:
+
+            item.pop(
+                "_content",
+                None,
+            )
+
         logger.info(
-            "semantic_search query=%s category=%s results=%s",
+            (
+                "semantic_search "
+                "query=%s category=%s "
+                "results=%s"
+            ),
             q,
             category,
             len(results),
@@ -358,13 +662,20 @@ def semantic_search(
         raise
 
     except Exception:
+
         logger.exception(
-            "semantic_search_failed query=%s category=%s",
+            (
+                "semantic_search_failed "
+                "query=%s category=%s"
+            ),
             q,
             category,
         )
 
         raise HTTPException(
             status_code=500,
-            detail="Error interno al procesar la búsqueda semántica",
+            detail=(
+                "Error interno al procesar "
+                "la búsqueda semántica"
+            ),
         )
