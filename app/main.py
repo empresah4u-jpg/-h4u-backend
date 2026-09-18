@@ -1,25 +1,36 @@
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from psycopg import Error as PsycopgError
 
 from app.db import get_connection
+from app.logger import get_logger
 
 from app.routers.hotels import router as hotels_router
 from app.routers.restaurants import router as restaurants_router
 from app.routers.tours import router as tours_router
+from app.routers.tour_operators import router as tour_operators_router
 from app.routers.attractions import router as attractions_router
 from app.routers.transport import router as transport_router
+from app.routers.services import router as services_router
 from app.routers.search import router as search_router
 from app.routers.semantic_search import router as semantic_search_router
-from fastapi.responses import JSONResponse
-from psycopg import Error as PsycopgError
-from app.logger import get_logger
+from app.routers.service_requests import router as service_requests_router
+from app.routers.partner_responses import router as partner_responses_router
+from app.routers.reservations import router as reservations_router
+from app.routers.passengers import router as passengers_router
+from app.routers.payments import router as payments_router
+from app.routers.commissions import router as commissions_router
+from app.routers.settlements import router as settlements_router
 
 logger = get_logger(__name__)
 
+
 app = FastAPI(
     title="H4U API",
-    version="0.3.0"
+    version="0.3.0",
 )
+
 
 @app.exception_handler(PsycopgError)
 async def database_error_handler(
@@ -61,6 +72,7 @@ async def general_error_handler(
         },
     )
 
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
@@ -76,11 +88,19 @@ app.add_middleware(
 app.include_router(hotels_router)
 app.include_router(restaurants_router)
 app.include_router(tours_router)
+app.include_router(tour_operators_router)
 app.include_router(attractions_router)
 app.include_router(transport_router)
+app.include_router(services_router)
 app.include_router(search_router)
 app.include_router(semantic_search_router)
-
+app.include_router(service_requests_router)
+app.include_router(partner_responses_router)
+app.include_router(reservations_router)
+app.include_router(passengers_router)
+app.include_router(payments_router)
+app.include_router(commissions_router)
+app.include_router(settlements_router)
 
 @app.get("/health", tags=["System"])
 def health():
