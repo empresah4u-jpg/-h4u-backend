@@ -230,10 +230,13 @@ def respond_to_request(payload: PartnerResponseCreate):
                 UPDATE request_partners
                 SET
                     status = 'accepted',
+                    proposed_time = COALESCE(%s, proposed_time),
+                    proposed_price = COALESCE(%s, proposed_price),
+                    proposed_currency = COALESCE(%s, proposed_currency),
+                    partner_message = COALESCE(%s, partner_message),
                     responded_at = now(),
                     accepted_at = now(),
                     is_winner = true,
-                    partner_message = %s,
                     updated_at = now()
                 WHERE id = %s
                   AND status IN (
@@ -246,6 +249,9 @@ def respond_to_request(payload: PartnerResponseCreate):
                 RETURNING id
                 """,
                 (
+                    payload.proposed_time,
+                    payload.proposed_price,
+                    payload.proposed_currency,
                     payload.partner_message,
                     payload.request_partner_id,
                 ),
