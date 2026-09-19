@@ -16,6 +16,10 @@ class ReservationCreate(BaseModel):
     service_request_code: str
 
 
+class ReservationCancel(BaseModel):
+    reason: str
+
+
 @router.post("", status_code=201)
 def create_reservation(payload: ReservationCreate):
 
@@ -76,6 +80,7 @@ def create_reservation(payload: ReservationCreate):
                     status_code=409,
                     detail="La solicitud no tiene partner ganador.",
                 )
+
             # 3. Revalidar el producto antes de reservar.
             # Una solicitud antigua no puede saltarse las reglas
             # comerciales actuales del producto.
@@ -118,7 +123,8 @@ def create_reservation(payload: ReservationCreate):
                         "para este producto."
                     ),
                 )
-            # 3. Evitar una segunda reserva.
+
+            # 4. Evitar una segunda reserva.
             cur.execute(
                 """
                 SELECT
@@ -142,7 +148,7 @@ def create_reservation(payload: ReservationCreate):
                     ),
                 )
 
-            # 4. Obtener el request_partner ganador y
+            # 5. Obtener el request_partner ganador y
             # la configuración comercial.
             cur.execute(
                 """
@@ -202,14 +208,14 @@ def create_reservation(payload: ReservationCreate):
                     ),
                 )
 
-            # 5. Determinar hora acordada.
+            # 6. Determinar hora acordada.
             service_time = (
                 proposed_time
                 if proposed_time is not None
                 else preferred_time
             )
 
-            # 6. Determinar precio.
+            # 7. Determinar precio.
             #
             # Si existe proposed_price, se considera precio total
             # de la contraoferta.
@@ -242,7 +248,7 @@ def create_reservation(payload: ReservationCreate):
                     ),
                 )
 
-            # 7. Generar código.
+            # 8. Generar código.
             cur.execute(
                 """
                 SELECT
@@ -263,7 +269,7 @@ def create_reservation(payload: ReservationCreate):
 
             reservation_code = cur.fetchone()[0]
 
-            # 8. Crear reserva.
+            # 9. Crear reserva.
             cur.execute(
                 """
                 INSERT INTO reservations (
@@ -332,4 +338,190 @@ def create_reservation(payload: ReservationCreate):
         "currency": currency.strip(),
         "partner_id": str(assigned_partner_id),
         "request_partner_id": str(request_partner_id),
+    }
+
+
+@router.post("/{reservation_code}/cancel", status_code=200)
+def cancel_reservation(
+    reservation_code: str,
+    payload: ReservationCancel,
+):
+
+    cancellation_reason = payload.reason.strip()
+
+    if not cancellation_reason:
+        raise HTTPException(
+            status_code=400,
+            detail="Debe indicar el motivo de cancelación.",
+        )
+
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+
+            # 1. Bloquear la reserva para evitar
+            # cancelaciones concurrentes.
+            cur.execute(
+                """
+                SELECT
+                    id,
+                    code,
+                    status,
+                    cancelled_at,
+                    cancellation_reason
+                FROM reservations
+                WHERE code = %s
+                FOR UPDATE
+                """,
+                (reservation_code,),
+            )
+
+            reservation = cur.fetchone()
+
+            if not reservation:
+                raise HTTPException(
+                    status_code=404,
+                    detail="Reserva no encontrada.",
+                )
+
+            reservation_id = reservation[0]
+            current_status = reservation[2]
+
+            # 2. Evitar una segunda cancelación.
+            if current_status == "cancelled":
+                raise HTTPException(
+                    status_code=409,
+                    detail="La reserva ya está cancelada.",
+                )
+
+            # 3. Estados finales que no admiten cancelación.
+            if current_status in {
+                "completed",
+                "no_show",
+            }:
+                raise HTTPException(
+                    status_code=409,
+                    detail=(
+                        f"Una reserva en estado "
+                        f"{current_status} no puede cancelarse."
+                    ),
+                )
+
+            # 4. Solo estos estados pueden cancelarse.
+            cancellable_statuses = {
+                "pending",
+                "awaiting_passenger_data",
+                "payment_pending",
+                "confirmed",
+                "ready",
+            }
+
+            if current_status not in cancellable_statuses:
+                raise HTTPException(
+                    status_code=409,
+                    detail=(
+                        "La reserva no se encuentra en un "
+                        "estado que permita cancelación."
+                    ),
+                )
+
+            # 5. Si existe dinero ya cobrado o un pago
+            # en disputa, no cancelar directamente.
+            # Debe resolverse mediante el flujo financiero
+            # correspondiente.
+            cur.execute(
+                """
+                SELECT
+                    code,
+                    status
+                FROM payments
+                WHERE reservation_id = %s
+                  AND status IN (
+                      'paid',
+                      'disputed',
+                      'partially_refunded'
+                  )
+                LIMIT 1
+                FOR UPDATE
+                """,
+                (reservation_id,),
+            )
+
+            protected_payment = cur.fetchone()
+
+            if protected_payment:
+                raise HTTPException(
+                    status_code=409,
+                    detail=(
+                        "La reserva tiene un pago que requiere "
+                        "revisión o reembolso antes de cancelarse."
+                    ),
+                )
+
+            # 6. Cancelar pagos que todavía no han sido
+            # completados.
+            #
+            # Esto evita que un pago pendiente continúe
+            # activo después de cancelar la reserva.
+            cur.execute(
+                """
+                UPDATE payments
+                SET
+                    status = 'cancelled',
+                    updated_at = now()
+                WHERE reservation_id = %s
+                  AND status IN (
+                      'pending',
+                      'reported',
+                      'waiting_verification'
+                  )
+                """,
+                (reservation_id,),
+            )
+
+            cancelled_payments = cur.rowcount
+
+            # 7. Cancelar la reserva conservando
+            # trazabilidad.
+            cur.execute(
+                """
+                UPDATE reservations
+                SET
+                    status = 'cancelled',
+                    cancelled_at = now(),
+                    cancellation_reason = %s,
+                    updated_at = now()
+                WHERE id = %s
+                  AND status = %s
+                RETURNING
+                    code,
+                    status,
+                    cancelled_at,
+                    cancellation_reason
+                """,
+                (
+                    cancellation_reason,
+                    reservation_id,
+                    current_status,
+                ),
+            )
+
+            cancelled = cur.fetchone()
+
+            if not cancelled:
+                raise HTTPException(
+                    status_code=409,
+                    detail=(
+                        "No fue posible cancelar la reserva."
+                    ),
+                )
+
+        conn.commit()
+
+    return {
+        "reservation_code": cancelled[0],
+        "previous_status": current_status,
+        "status": cancelled[1],
+        "cancelled_at": cancelled[2],
+        "cancellation_reason": cancelled[3],
+        "cancelled_payments": cancelled_payments,
     }
