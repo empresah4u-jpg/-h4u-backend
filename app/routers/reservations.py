@@ -76,7 +76,48 @@ def create_reservation(payload: ReservationCreate):
                     status_code=409,
                     detail="La solicitud no tiene partner ganador.",
                 )
+            # 3. Revalidar el producto antes de reservar.
+            # Una solicitud antigua no puede saltarse las reglas
+            # comerciales actuales del producto.
+            cur.execute(
+                """
+                SELECT
+                    status,
+                    reservations_enabled
+                FROM products
+                WHERE id = %s
+                """,
+                (product_id,),
+            )
 
+            product = cur.fetchone()
+
+            if not product:
+                raise HTTPException(
+                    status_code=404,
+                    detail="Producto no encontrado.",
+                )
+
+            product_status = product[0]
+            reservations_enabled = product[1]
+
+            if product_status != "active":
+                raise HTTPException(
+                    status_code=409,
+                    detail=(
+                        "El producto no está activo "
+                        "y no puede reservarse."
+                    ),
+                )
+
+            if not reservations_enabled:
+                raise HTTPException(
+                    status_code=409,
+                    detail=(
+                        "Las reservas están deshabilitadas "
+                        "para este producto."
+                    ),
+                )
             # 3. Evitar una segunda reserva.
             cur.execute(
                 """

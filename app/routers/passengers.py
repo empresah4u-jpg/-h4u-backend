@@ -1,5 +1,5 @@
 from datetime import date
-from typing import List, Optional
+from typing import List
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
@@ -70,14 +70,20 @@ def create_passengers(
 
             # 1. Bloquear la reserva mientras registramos
             # los pasajeros.
+            #
+            # También consultamos requires_payment para decidir
+            # el siguiente estado cuando estén completos.
             cur.execute(
                 """
                 SELECT
                     r.id,
                     r.service_request_id,
                     r.passenger_count,
-                    r.status
+                    r.status,
+                    p.requires_payment
                 FROM reservations r
+                JOIN products p
+                    ON p.id = r.product_id
                 WHERE r.code = %s
                 FOR UPDATE
                 """,
@@ -96,6 +102,7 @@ def create_passengers(
             service_request_id = reservation[1]
             expected_passengers = reservation[2]
             reservation_status = reservation[3]
+            requires_payment = reservation[4]
 
             if reservation_status != "awaiting_passenger_data":
                 raise HTTPException(
@@ -226,22 +233,36 @@ def create_passengers(
             registered_passengers = cur.fetchone()[0]
 
             # 4. Si ya tenemos todos los pasajeros,
-            # avanzar automáticamente al pago.
+            # avanzar según la política de pago del producto.
             new_status = reservation_status
 
             if registered_passengers == expected_passengers:
+
+                if requires_payment:
+                    next_status = "payment_pending"
+                else:
+                    next_status = "confirmed"
 
                 cur.execute(
                     """
                     UPDATE reservations
                     SET
-                        status = 'payment_pending',
+                        status = %s,
+                        confirmed_at = CASE
+                            WHEN %s = 'confirmed'
+                            THEN COALESCE(confirmed_at, now())
+                            ELSE confirmed_at
+                        END,
                         updated_at = now()
                     WHERE id = %s
                       AND status = 'awaiting_passenger_data'
                     RETURNING status
                     """,
-                    (reservation_id,),
+                    (
+                        next_status,
+                        next_status,
+                        reservation_id,
+                    ),
                 )
 
                 updated = cur.fetchone()
@@ -259,4 +280,5 @@ def create_passengers(
         "ready_for_payment": (
             new_status == "payment_pending"
         ),
+        "payment_required": requires_payment,
     }
