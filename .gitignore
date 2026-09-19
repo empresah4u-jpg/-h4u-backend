@@ -35,3 +35,8 @@ data/samples/*
 !data/processed/.gitkeep
 
 !data/samples/.gitkeep
+.env.*
+!.env.example
+.pytest_cache/
+.coverage
+htmlcov/

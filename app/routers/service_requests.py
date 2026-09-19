@@ -6,6 +6,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
 from app.db import get_connection
+from app.auth import authorize, recheck_owner
 
 
 router = APIRouter(
@@ -35,7 +36,7 @@ class ServiceRequestCreate(BaseModel):
     simulation: bool = False
 
 
-@router.post("", status_code=201)
+@router.post("", status_code=201, dependencies=[authorize("request.create")])
 def create_service_request(payload: ServiceRequestCreate):
 
     if payload.request_type not in {"request", "reservation"}:
@@ -69,6 +70,7 @@ def create_service_request(payload: ServiceRequestCreate):
                 FROM sessions s
                 WHERE s.id = %s
                   AND s.status = 'active'
+                FOR SHARE OF s
                 """,
                 (payload.session_id,),
             )
@@ -81,6 +83,7 @@ def create_service_request(payload: ServiceRequestCreate):
                     detail="Sesión activa no encontrada.",
                 )
 
+            recheck_owner(cur, "session", payload.session_id)
             traveler_id = session[1]
             destination_id = session[2]
 

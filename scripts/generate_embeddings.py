@@ -1,11 +1,11 @@
 import hashlib
 
-from sentence_transformers import SentenceTransformer
+from app.embeddings import MODEL_NAME, DIMENSIONS, get_model, vector_to_pg, check_storage
 
 from app.db import get_connection
 
 
-MODEL_NAME = "sentence-transformers/all-MiniLM-L6-v2"
+
 
 
 def clean(value):
@@ -16,10 +16,6 @@ def clean(value):
 
 def content_hash(content):
     return hashlib.sha256(content.encode("utf-8")).hexdigest()
-
-
-def vector_to_pg(vector):
-    return "[" + ",".join(str(float(x)) for x in vector) + "]"
 
 
 def load_entities(cur):
@@ -234,6 +230,7 @@ def main():
     with get_connection() as conn:
         with conn.cursor() as cur:
 
+            check_storage(cur)
             entities = load_entities(cur)
 
             print(f"Entidades encontradas: {len(entities)}")
@@ -244,7 +241,7 @@ def main():
 
             print(f"Cargando modelo: {MODEL_NAME}")
 
-            model = SentenceTransformer(MODEL_NAME)
+            model = get_model()
 
             texts = [item["content"] for item in entities]
 
@@ -258,7 +255,7 @@ def main():
 
             print(f"Dimensión: {embeddings.shape[1]}")
 
-            if embeddings.shape[1] != 384:
+            if embeddings.shape[1] != DIMENSIONS:
                 raise ValueError(
                     f"Se esperaban 384 dimensiones y llegaron "
                     f"{embeddings.shape[1]}"

@@ -4,6 +4,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from app.db import get_connection
+from app.auth import authorize, recheck_owner
 
 
 router = APIRouter(
@@ -21,7 +22,7 @@ class PaymentCreate(BaseModel):
     proof_url: Optional[str] = None
 
 
-@router.post("", status_code=201)
+@router.post("", status_code=201, dependencies=[authorize("payment.create")])
 def create_payment(payload: PaymentCreate):
 
     payment_method = payload.payment_method.strip().lower()
@@ -83,6 +84,7 @@ def create_payment(payload: PaymentCreate):
                     detail="Reserva no encontrada.",
                 )
 
+            recheck_owner(cur, "reservation", payload.reservation_code)
             reservation_id = reservation[0]
             reservation_code = reservation[1]
             agreed_price = reservation[2]
@@ -98,7 +100,7 @@ def create_payment(payload: PaymentCreate):
                     ),
                 )
 
-            if agreed_price is None:
+            if agreed_price is None or not agreed_price.is_finite() or agreed_price <= 0:
                 raise HTTPException(
                     status_code=409,
                     detail=(
@@ -120,7 +122,9 @@ def create_payment(payload: PaymentCreate):
                       'pending',
                       'reported',
                       'waiting_verification',
-                      'paid'
+                      'paid',
+                      'partially_refunded',
+                      'refunded'
                   )
                 ORDER BY created_at DESC
                 LIMIT 1
@@ -257,134 +261,69 @@ def create_payment(payload: PaymentCreate):
     }
 
 
-@router.post("/{payment_code}/confirm-partner", status_code=200)
-def confirm_cash_by_partner(payment_code: str):
+def _lock_cash_payment(cur, payment_code):
+    # Todas las operaciones financieras bloquean primero reserva y luego pago.
+    cur.execute("SELECT reservation_id FROM payments WHERE code = %s", (payment_code,))
+    row = cur.fetchone()
+    if not row:
+        raise HTTPException(404, "Pago no encontrado.")
+    cur.execute("SELECT code, status FROM reservations WHERE id = %s FOR UPDATE", (row[0],))
+    reservation = cur.fetchone()
+    cur.execute("SELECT id FROM payments WHERE code = %s FOR UPDATE", (payment_code,))
+    cur.fetchone()
+    recheck_owner(cur, "payment", payment_code)
+    if not reservation or reservation[1] != "payment_pending":
+        raise HTTPException(409, "La reserva no está pendiente de pago.")
 
+
+@router.post("/{payment_code}/confirm-partner", status_code=200, dependencies=[authorize("payment.partner")])
+def confirm_cash_by_partner(payment_code: str):
     with get_connection() as conn:
         with conn.cursor() as cur:
-
-            # 1. Bloquear el pago.
-            cur.execute(
-                """
-                SELECT
-                    id,
-                    code,
-                    payment_method,
-                    received_by,
-                    status,
-                    partner_confirmed_at,
-                    customer_confirmed_at
-                FROM payments
-                WHERE code = %s
-                FOR UPDATE
-                """,
-                (payment_code,),
-            )
-
+            _lock_cash_payment(cur, payment_code)
+            cur.execute("""
+                SELECT id, reservation_id, payment_method, received_by, status,
+                       partner_confirmed_at, customer_confirmed_at
+                FROM payments WHERE code = %s FOR UPDATE
+            """, (payment_code,))
             payment = cur.fetchone()
-
             if not payment:
-                raise HTTPException(
-                    status_code=404,
-                    detail="Pago no encontrado.",
-                )
-
-            payment_id = payment[0]
-            payment_method = payment[2]
-            received_by = payment[3]
-            status = payment[4]
-            partner_confirmed_at = payment[5]
-
-            # 2. Solo aplica a efectivo.
-            if payment_method != "cash":
-                raise HTTPException(
-                    status_code=409,
-                    detail=(
-                        "Este endpoint solo permite "
-                        "confirmar pagos en efectivo."
-                    ),
-                )
-
-            # 3. El efectivo debe haber sido
-            # recibido directamente por el partner.
-            if received_by != "partner":
-                raise HTTPException(
-                    status_code=409,
-                    detail=(
-                        "Este pago no está configurado "
-                        "para ser recibido por el partner."
-                    ),
-                )
-
-            # 4. Debe seguir pendiente.
-            if status != "pending":
-                raise HTTPException(
-                    status_code=409,
-                    detail=(
-                        "El pago ya no está pendiente "
-                        "de confirmación."
-                    ),
-                )
-
-            if partner_confirmed_at is not None:
-                raise HTTPException(
-                    status_code=409,
-                    detail=(
-                        "El partner ya confirmó "
-                        "este pago."
-                    ),
-                )
-
-            # 5. Registrar confirmación del partner.
-            #
-            # IMPORTANTE:
-            # esto todavía NO significa que el pago
-            # esté completamente validado.
-            cur.execute(
-                """
-                UPDATE payments
-                SET
-                    partner_confirmed_at = now(),
-                    status = 'waiting_verification',
+                raise HTTPException(404, "Pago no encontrado.")
+            if payment[2] != "cash" or payment[3] != "partner":
+                raise HTTPException(409, "Solo se confirma efectivo recibido por el partner.")
+            if payment[4] not in {"pending", "waiting_verification"} or payment[5] is not None:
+                raise HTTPException(409, "El pago ya fue confirmado o no admite confirmación.")
+            paid = payment[6] is not None
+            cur.execute("""
+                UPDATE payments SET partner_confirmed_at = now(), status = %s,
+                    verified_at = CASE WHEN %s THEN now() ELSE verified_at END,
+                    paid_at = CASE WHEN %s THEN now() ELSE paid_at END,
                     updated_at = now()
                 WHERE id = %s
-                  AND status = 'pending'
-                  AND partner_confirmed_at IS NULL
-                RETURNING
-                    code,
-                    status,
-                    partner_confirmed_at
-                """,
-                (payment_id,),
-            )
-
+                RETURNING code, status, partner_confirmed_at
+            """, ("paid" if paid else "waiting_verification", paid, paid, payment[0]))
             updated = cur.fetchone()
-
-            if not updated:
-                raise HTTPException(
-                    status_code=409,
-                    detail=(
-                        "No fue posible confirmar "
-                        "el pago."
-                    ),
-                )
-
-        conn.commit()
-
+            if paid:
+                cur.execute("""
+                    UPDATE reservations SET status = 'confirmed',
+                        confirmed_at = COALESCE(confirmed_at, now()), updated_at = now()
+                    WHERE id = %s AND status = 'payment_pending'
+                    RETURNING code
+                """, (payment[1],))
+                if not cur.fetchone():
+                    raise HTTPException(409, "La reserva no admite confirmación.")
     return {
-        "code": updated[0],
-        "status": updated[1],
-        "partner_confirmed": True,
-        "partner_confirmed_at": updated[2],
-        "customer_confirmed": False,
-        "paid": False,
+        "code": updated[0], "status": updated[1],
+        "partner_confirmed": True, "partner_confirmed_at": updated[2],
+        "customer_confirmed": paid, "verified": paid, "paid": paid,
     }
 
-@router.post("/{payment_code}/confirm-customer", status_code=200)
+@router.post("/{payment_code}/confirm-customer", status_code=200, dependencies=[authorize("payment.customer")])
 def confirm_cash_by_customer(payment_code: str):
 
     with get_connection() as conn:
         with conn.cursor() as cur:
+            _lock_cash_payment(cur, payment_code)
 
             # 1. Bloquear el pago.
             cur.execute(

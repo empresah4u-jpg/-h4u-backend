@@ -1,11 +1,13 @@
 from datetime import time
+from decimal import Decimal
 from typing import Optional
 from uuid import UUID
 
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from app.db import get_connection
+from app.auth import authorize, recheck_owner
 
 
 router = APIRouter(
@@ -19,12 +21,22 @@ class PartnerResponseCreate(BaseModel):
     action: str
 
     proposed_time: Optional[time] = None
-    proposed_price: Optional[float] = Field(default=None, ge=0)
+    proposed_price: Optional[Decimal] = Field(default=None, ge=0, max_digits=12, decimal_places=2)
     proposed_currency: Optional[str] = None
     partner_message: Optional[str] = None
 
+    @field_validator("proposed_currency")
+    @classmethod
+    def valid_currency(cls, value):
+        if value is None:
+            return value
+        value = value.strip().upper()
+        if len(value) != 3 or not value.isascii() or not value.isalpha():
+            raise ValueError("La moneda debe tener tres letras.")
+        return value
 
-@router.post("", status_code=200)
+
+@router.post("", status_code=200, dependencies=[authorize("response.create")])
 def respond_to_request(payload: PartnerResponseCreate):
 
     action = payload.action.lower().strip()
@@ -83,7 +95,17 @@ def respond_to_request(payload: PartnerResponseCreate):
 
             service_request_id = candidate[1]
             partner_id = candidate[2]
-            candidate_status = candidate[3]
+            # Serializar cualquier respuesta, no solo la aceptación.
+            cur.execute("SELECT status, assigned_partner_id FROM service_requests WHERE id = %s FOR UPDATE", (service_request_id,))
+            request = cur.fetchone()
+            if not request or request[0] not in {"searching", "offers_received"} or request[1] is not None:
+                raise HTTPException(409, "La solicitud ya no admite respuestas.")
+            cur.execute("SELECT status FROM request_partners WHERE id = %s FOR UPDATE", (payload.request_partner_id,))
+            current = cur.fetchone()
+            if not current:
+                raise HTTPException(404, "Candidatura no encontrada.")
+            recheck_owner(cur, "candidate", payload.request_partner_id)
+            candidate_status = current[0]
             request_code = candidate[4]
             partner_code = candidate[5]
             business_name = candidate[6]

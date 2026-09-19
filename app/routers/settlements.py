@@ -6,6 +6,9 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from app.db import get_connection
+from app.auth import authorize, recheck_owner
+from app.services.finance import (allocate_credits, lock_settlement_partner,
+                                  validate_settlement_balance, snapshot_settlement)
 
 
 router = APIRouter(
@@ -22,7 +25,7 @@ class SettlementCreate(BaseModel):
     due_date: date
 
 
-@router.post("", status_code=201)
+@router.post("", status_code=201, dependencies=[authorize("settlement.create")])
 def create_settlement(payload: SettlementCreate):
 
     partner_code = payload.partner_code.strip()
@@ -47,7 +50,7 @@ def create_settlement(payload: SettlementCreate):
             ),
         )
 
-    if len(currency) != 3:
+    if len(currency) != 3 or not currency.isascii() or not currency.isalpha():
         raise HTTPException(
             status_code=400,
             detail="La moneda debe usar código ISO de 3 letras.",
@@ -290,6 +293,9 @@ def create_settlement(payload: SettlementCreate):
                     ),
                 )
 
+            net_amount = allocate_credits(cur, partner_id, currency, settlement_id, total_amount)
+            validate_settlement_balance(cur, settlement_id)
+
         conn.commit()
 
     return {
@@ -300,7 +306,9 @@ def create_settlement(payload: SettlementCreate):
         "period_start": payload.period_start,
         "period_end": payload.period_end,
         "commission_count": len(commissions),
-        "total_commission_amount": float(settlement[2]),
+        "total_commission_amount": float(net_amount),
+        "gross_commission_amount": float(total_amount),
+        "credit_amount": float(total_amount - net_amount),
         "currency": settlement[3].strip(),
         "due_date": settlement[4],
         "status": settlement[5],
@@ -314,7 +322,7 @@ class SettlementPaymentReport(BaseModel):
     proof_url: Optional[str] = None
 
 
-@router.post("/{settlement_code}/report-payment", status_code=200)
+@router.post("/{settlement_code}/report-payment", status_code=200, dependencies=[authorize("settlement.report")])
 def report_settlement_payment(
     settlement_code: str,
     payload: SettlementPaymentReport,
@@ -338,6 +346,7 @@ def report_settlement_payment(
 
     with get_connection() as conn:
         with conn.cursor() as cur:
+            lock_settlement_partner(cur, settlement_code)
 
             # 1. Bloquear el settlement.
             cur.execute(
@@ -350,7 +359,8 @@ def report_settlement_payment(
                     ps.status,
                     ps.reported_at,
                     p.code,
-                    p.business_name
+                    p.business_name,
+                    ps.reported_amount
                 FROM partner_settlements ps
                 JOIN partners p
                     ON p.id = ps.partner_id
@@ -368,6 +378,7 @@ def report_settlement_payment(
                     detail="Settlement no encontrado.",
                 )
 
+            recheck_owner(cur, "settlement", settlement_code)
             settlement_id = settlement[0]
             status = settlement[4]
             reported_at = settlement[5]
@@ -394,7 +405,7 @@ def report_settlement_payment(
                 )
 
             # 3. Evitar reportes repetidos.
-            if reported_at is not None:
+            if reported_at is not None and settlement[8] in (None, settlement[2]):
                 raise HTTPException(
                     status_code=409,
                     detail=(
@@ -407,6 +418,7 @@ def report_settlement_payment(
                 "open",
                 "pending_payment",
                 "overdue",
+                "waiting_verification",
             }:
                 raise HTTPException(
                     status_code=409,
@@ -415,6 +427,9 @@ def report_settlement_payment(
                         "un pago desde su estado actual."
                     ),
                 )
+
+            validate_settlement_balance(cur, settlement_id)
+            snapshot_settlement(cur, settlement_id, "before_payment_report")
 
             # 4. Registrar el reporte.
             #
@@ -428,10 +443,11 @@ def report_settlement_payment(
                     payment_reference = %s,
                     proof_url = %s,
                     reported_at = now(),
+                    reported_amount = total_commission_amount,
                     status = 'waiting_verification',
                     updated_at = now()
                 WHERE id = %s
-                  AND reported_at IS NULL
+                  AND (reported_at IS NULL OR reported_amount IS DISTINCT FROM total_commission_amount)
                 RETURNING
                     code,
                     total_commission_amount,
@@ -473,11 +489,18 @@ def report_settlement_payment(
         "verified": False,
         "paid": False,
     }
-@router.post("/{settlement_code}/verify-payment", status_code=200)
+@router.post("/{settlement_code}/verify-payment", status_code=200, dependencies=[authorize("settlement.verify")])
 def verify_settlement_payment(settlement_code: str):
 
     with get_connection() as conn:
         with conn.cursor() as cur:
+            # Mismo orden que creación y vencimientos: partner antes del cierre.
+            cur.execute("SELECT partner_id FROM partner_settlements WHERE code = %s", (settlement_code,))
+            owner = cur.fetchone()
+            if not owner:
+                raise HTTPException(404, "Settlement no encontrado.")
+            cur.execute("SELECT id FROM partners WHERE id = %s FOR UPDATE", (owner[0],))
+            cur.fetchone()
 
             # 1. Bloquear el settlement.
             cur.execute(
@@ -493,7 +516,8 @@ def verify_settlement_payment(settlement_code: str):
                     ps.verified_at,
                     ps.paid_at,
                     p.code,
-                    p.business_name
+                    p.business_name,
+                    ps.reported_amount
                 FROM partner_settlements ps
                 JOIN partners p
                     ON p.id = ps.partner_id
@@ -533,7 +557,10 @@ def verify_settlement_payment(settlement_code: str):
                     "paid": True,
                 }
 
-            if status != "waiting_verification":
+            validate_settlement_balance(cur, settlement_id)
+            zero_balance = settlement[3] == 0
+            if (status != "waiting_verification"
+                    and not (zero_balance and status in {"open", "pending_payment", "overdue"})):
                 raise HTTPException(
                     status_code=409,
                     detail=(
@@ -542,7 +569,7 @@ def verify_settlement_payment(settlement_code: str):
                     ),
                 )
 
-            if reported_at is None:
+            if reported_at is None and not zero_balance:
                 raise HTTPException(
                     status_code=409,
                     detail=(
@@ -550,6 +577,10 @@ def verify_settlement_payment(settlement_code: str):
                         "reportado el pago."
                     ),
                 )
+
+            if settlement[11] is not None and settlement[11] != settlement[3]:
+                raise HTTPException(409, "El refund cambió el saldo; se requiere un nuevo reporte conciliado.")
+            snapshot_settlement(cur, settlement_id, "before_verification")
 
             # 3. Bloquear las comisiones incluidas.
             cur.execute(
@@ -604,7 +635,7 @@ def verify_settlement_payment(settlement_code: str):
                     paid_at = now(),
                     updated_at = now()
                 WHERE id = %s
-                  AND status = 'waiting_verification'
+                  AND status IN ('waiting_verification', 'open', 'pending_payment', 'overdue')
                 RETURNING
                     code,
                     total_commission_amount,
@@ -716,6 +747,7 @@ def verify_settlement_payment(settlement_code: str):
         "settled_commissions": len(
             settled_commissions
         ),
+        "settled_without_transfer": zero_balance,
         "already_verified": False,
         "verified": True,
         "paid": True,
@@ -723,11 +755,21 @@ def verify_settlement_payment(settlement_code: str):
         "partner_reactivated": partner_reactivated,
     }
 
-@router.post("/process-overdue", status_code=200)
+@router.post("/process-overdue", status_code=200, dependencies=[authorize("settlement.overdue")])
 def process_overdue_settlements():
 
     with get_connection() as conn:
         with conn.cursor() as cur:
+            # Fijar primero el conjunto de partners y bloquearlo en orden estable.
+            cur.execute("""
+                SELECT p.id FROM partners p
+                WHERE EXISTS (
+                    SELECT 1 FROM partner_settlements ps
+                    WHERE ps.partner_id = p.id AND ps.status = 'pending_payment'
+                      AND ps.due_date < CURRENT_DATE
+                ) ORDER BY p.id FOR UPDATE OF p
+            """)
+            locked_partner_ids = [row[0] for row in cur.fetchall()]
 
             # 1. Buscar y bloquear settlements realmente vencidos.
             cur.execute(
@@ -740,9 +782,11 @@ def process_overdue_settlements():
                 FROM partner_settlements ps
                 WHERE ps.status = 'pending_payment'
                   AND ps.due_date < CURRENT_DATE
+                  AND ps.partner_id = ANY(%s)
                 ORDER BY ps.due_date, ps.id
                 FOR UPDATE OF ps
-                """
+                """,
+                (locked_partner_ids,),
             )
 
             overdue_rows = cur.fetchall()

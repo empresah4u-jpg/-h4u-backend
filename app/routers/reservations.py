@@ -1,9 +1,11 @@
 from typing import Optional
+from decimal import Decimal
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from app.db import get_connection
+from app.auth import authorize, recheck_owner
 
 
 router = APIRouter(
@@ -20,7 +22,7 @@ class ReservationCancel(BaseModel):
     reason: str
 
 
-@router.post("", status_code=201)
+@router.post("", status_code=201, dependencies=[authorize("reservation.create")])
 def create_reservation(payload: ReservationCreate):
 
     with get_connection() as conn:
@@ -54,6 +56,7 @@ def create_reservation(payload: ReservationCreate):
                     detail="Solicitud no encontrada.",
                 )
 
+            recheck_owner(cur, "request", payload.service_request_code)
             service_request_id = request[0]
             request_code = request[1]
             request_status = request[2]
@@ -248,6 +251,11 @@ def create_reservation(payload: ReservationCreate):
                     ),
                 )
 
+            if not Decimal(agreed_price).is_finite() or agreed_price < 0:
+                raise HTTPException(409, "El precio acordado no es válido.")
+            if not currency or len(currency.strip()) != 3 or not currency.strip().isascii() or not currency.strip().isalpha():
+                raise HTTPException(409, "La moneda acordada no es válida.")
+
             # 8. Generar código.
             cur.execute(
                 """
@@ -341,7 +349,7 @@ def create_reservation(payload: ReservationCreate):
     }
 
 
-@router.post("/{reservation_code}/cancel", status_code=200)
+@router.post("/{reservation_code}/cancel", status_code=200, dependencies=[authorize("reservation.cancel")])
 def cancel_reservation(
     reservation_code: str,
     payload: ReservationCancel,
@@ -383,6 +391,7 @@ def cancel_reservation(
                     detail="Reserva no encontrada.",
                 )
 
+            recheck_owner(cur, "reservation", reservation_code)
             reservation_id = reservation[0]
             current_status = reservation[2]
 

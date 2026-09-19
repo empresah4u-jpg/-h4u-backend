@@ -9,7 +9,9 @@ COPY requirements.txt .
 
 RUN pip install --no-cache-dir -r requirements.txt
 
-RUN python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2')"
+COPY app/embeddings.py app/embeddings.py
+
+RUN python -c "from app.embeddings import get_model; get_model()"
 
 COPY . .
 

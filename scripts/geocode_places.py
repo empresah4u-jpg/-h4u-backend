@@ -5,11 +5,6 @@ import psycopg
 
 API_KEY = os.getenv("GOOGLE_MAPS_API_KEY")
 
-if not API_KEY:
-    raise RuntimeError(
-        "No se encontró GOOGLE_MAPS_API_KEY. "
-        "Ejecuta: set -a && source .env && set +a"
-    )
 
 
 DB_CONFIG = {
@@ -58,44 +53,56 @@ def get_place_location(place_id: str):
     return data.get("location"), response.status_code, None
 
 
-print("\nH4U - GOOGLE PLACES HOTELS DRY RUN")
-print("PostgreSQL NO será modificado.\n")
-
-hotels = get_pending_hotels()
-
-print(f"Hoteles pendientes: {len(hotels)}")
-print()
-
-api_calls = 0
-
-for code, name, place_id in hotels:
-    print("=" * 80)
-    print(f"{code} - {name}")
-    print(f"PLACE_ID: {place_id}")
-
-    try:
-        location, status_code, error = get_place_location(place_id)
-        api_calls += 1
-
-        if error:
-            print(f"ERROR HTTP {status_code}")
-            print(error)
-            continue
-
-        if not location:
-            print("SIN COORDENADAS")
-            continue
-
-        print(f"latitude:  {location.get('latitude')}")
-        print(f"longitude: {location.get('longitude')}")
-        print("STATUS: OK")
-
-    except requests.RequestException as exc:
-        print(f"ERROR DE CONEXIÓN: {exc}")
+def main():
+    if not API_KEY:
+        raise RuntimeError(
+            "No se encontró GOOGLE_MAPS_API_KEY. "
+            "Ejecuta: set -a && source .env && set +a"
+        )
 
 
-print("\n" + "=" * 80)
-print("DRY RUN TERMINADO")
-print(f"Hoteles revisados: {len(hotels)}")
-print(f"Llamadas realizadas a Google: {api_calls}")
-print("PostgreSQL NO fue modificado.")
+    print("\nH4U - GOOGLE PLACES HOTELS DRY RUN")
+    print("PostgreSQL NO será modificado.\n")
+
+    hotels = get_pending_hotels()
+
+    print(f"Hoteles pendientes: {len(hotels)}")
+    print()
+
+    api_calls = 0
+
+    for code, name, place_id in hotels:
+        print("=" * 80)
+        print(f"{code} - {name}")
+        print(f"PLACE_ID: {place_id}")
+
+        try:
+            location, status_code, error = get_place_location(place_id)
+            api_calls += 1
+
+            if error:
+                print(f"ERROR HTTP {status_code}")
+                print(error)
+                continue
+
+            if not location:
+                print("SIN COORDENADAS")
+                continue
+
+            print(f"latitude:  {location.get('latitude')}")
+            print(f"longitude: {location.get('longitude')}")
+            print("STATUS: OK")
+
+        except requests.RequestException as exc:
+            print(f"ERROR DE CONEXIÓN: {exc}")
+
+
+    print("\n" + "=" * 80)
+    print("DRY RUN TERMINADO")
+    print(f"Hoteles revisados: {len(hotels)}")
+    print(f"Llamadas realizadas a Google: {api_calls}")
+    print("PostgreSQL NO fue modificado.")
+
+
+if __name__ == "__main__":
+    main()

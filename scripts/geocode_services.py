@@ -7,11 +7,6 @@ import psycopg
 
 API_KEY = os.getenv("GOOGLE_MAPS_API_KEY")
 
-if not API_KEY:
-    raise RuntimeError(
-        "No se encontró GOOGLE_MAPS_API_KEY. "
-        "Ejecuta: set -a && source .env && set +a"
-    )
 
 
 DB_CONFIG = {
@@ -116,72 +111,84 @@ def update_service(
         conn.commit()
 
 
-print("\nH4U - GOOGLE PLACES SERVICES UPDATE")
-print("PostgreSQL SÍ será actualizado.\n")
-
-services = get_pending_services()
-
-print(f"Servicios pendientes: {len(services)}")
-print()
-
-api_calls = 0
-success = 0
-failed = 0
-
-for source_table, code, name, place_id in services:
-    print("=" * 80)
-    print(f"TABLA: {source_table}")
-    print(f"{code} - {name}")
-    print(f"PLACE_ID: {place_id}")
-
-    try:
-        location, status_code, error = get_place_location(place_id)
-        api_calls += 1
-
-        if error:
-            failed += 1
-            print(f"ERROR HTTP {status_code}")
-            print(error)
-            continue
-
-        if not location:
-            failed += 1
-            print("SIN COORDENADAS")
-            continue
-
-        latitude = location.get("latitude")
-        longitude = location.get("longitude")
-
-        if latitude is None or longitude is None:
-            failed += 1
-            print("COORDENADAS INCOMPLETAS")
-            continue
-
-        update_service(
-            source_table,
-            code,
-            latitude,
-            longitude,
+def main():
+    if not API_KEY:
+        raise RuntimeError(
+            "No se encontró GOOGLE_MAPS_API_KEY. "
+            "Ejecuta: set -a && source .env && set +a"
         )
 
-        print(f"latitude:  {latitude}")
-        print(f"longitude: {longitude}")
-        print("STATUS: ACTUALIZADO")
 
-        success += 1
+    print("\nH4U - GOOGLE PLACES SERVICES UPDATE")
+    print("PostgreSQL SÍ será actualizado.\n")
 
-    except requests.RequestException as exc:
-        failed += 1
-        print(f"ERROR DE CONEXIÓN: {exc}")
+    services = get_pending_services()
 
-    except psycopg.Error as exc:
-        failed += 1
-        print(f"ERROR POSTGRESQL: {exc}")
+    print(f"Servicios pendientes: {len(services)}")
+    print()
+
+    api_calls = 0
+    success = 0
+    failed = 0
+
+    for source_table, code, name, place_id in services:
+        print("=" * 80)
+        print(f"TABLA: {source_table}")
+        print(f"{code} - {name}")
+        print(f"PLACE_ID: {place_id}")
+
+        try:
+            location, status_code, error = get_place_location(place_id)
+            api_calls += 1
+
+            if error:
+                failed += 1
+                print(f"ERROR HTTP {status_code}")
+                print(error)
+                continue
+
+            if not location:
+                failed += 1
+                print("SIN COORDENADAS")
+                continue
+
+            latitude = location.get("latitude")
+            longitude = location.get("longitude")
+
+            if latitude is None or longitude is None:
+                failed += 1
+                print("COORDENADAS INCOMPLETAS")
+                continue
+
+            update_service(
+                source_table,
+                code,
+                latitude,
+                longitude,
+            )
+
+            print(f"latitude:  {latitude}")
+            print(f"longitude: {longitude}")
+            print("STATUS: ACTUALIZADO")
+
+            success += 1
+
+        except requests.RequestException as exc:
+            failed += 1
+            print(f"ERROR DE CONEXIÓN: {exc}")
+
+        except psycopg.Error as exc:
+            failed += 1
+            print(f"ERROR POSTGRESQL: {exc}")
 
 
-print("\n" + "=" * 80)
-print("PROCESO TERMINADO")
-print(f"Servicios revisados: {len(services)}")
-print(f"Actualizados: {success}")
-print(f"Fallidos: {failed}")
-print(f"Llamadas realizadas a Google: {api_calls}")
+    print("\n" + "=" * 80)
+    print("PROCESO TERMINADO")
+    print(f"Servicios revisados: {len(services)}")
+    print(f"Actualizados: {success}")
+    print(f"Fallidos: {failed}")
+    print(f"Llamadas realizadas a Google: {api_calls}")
+
+
+if __name__ == "__main__":
+    main()

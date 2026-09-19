@@ -3,6 +3,8 @@ from decimal import Decimal, ROUND_HALF_UP
 from fastapi import APIRouter, HTTPException
 
 from app.db import get_connection
+from app.auth import authorize
+from app.services.finance import lock_payment_partner, event
 
 
 router = APIRouter(
@@ -11,11 +13,12 @@ router = APIRouter(
 )
 
 
-@router.post("/from-payment/{payment_code}", status_code=201)
+@router.post("/from-payment/{payment_code}", status_code=201, dependencies=[authorize("commission.create")])
 def create_commission_from_payment(payment_code: str):
 
     with get_connection() as conn:
         with conn.cursor() as cur:
+            lock_payment_partner(cur, payment_code)
 
             # 1. Obtener y bloquear el pago.
             #
@@ -51,15 +54,6 @@ def create_commission_from_payment(payment_code: str):
             payment_currency = payment[4].strip()
             payment_status = payment[5]
 
-            if payment_status != "paid":
-                raise HTTPException(
-                    status_code=409,
-                    detail=(
-                        "La comisión solo puede generarse "
-                        "desde un pago confirmado."
-                    ),
-                )
-
             # 2. Comprobar idempotencia.
             #
             # Además de esta validación, PostgreSQL
@@ -88,6 +82,15 @@ def create_commission_from_payment(payment_code: str):
                     "status": existing[3],
                     "already_existed": True,
                 }
+
+            if payment_status != "paid":
+                raise HTTPException(
+                    status_code=409,
+                    detail=(
+                        "La comisión solo puede generarse "
+                        "desde un pago confirmado."
+                    ),
+                )
 
             # 3. Obtener la reserva y el vínculo
             # comercial exacto que ganó la solicitud.
@@ -185,6 +188,12 @@ def create_commission_from_payment(payment_code: str):
             # 5. Calcular comisión usando Decimal.
             base_amount = Decimal(payment_amount)
             commission_value = Decimal(commission_value)
+
+            if (not base_amount.is_finite() or base_amount <= 0
+                    or not commission_value.is_finite() or commission_value < 0
+                    or (commission_type == "percentage" and commission_value > 100)
+                    or (commission_type == "fixed" and commission_value > base_amount)):
+                raise HTTPException(409, "La configuración de comisión tiene montos inválidos.")
 
             if commission_type == "percentage":
 
@@ -297,6 +306,7 @@ def create_commission_from_payment(payment_code: str):
             )
 
             created = cur.fetchone()
+            event(cur, "commission", created[0], "earned", {"payment_code": payment_code, "commission_amount": commission_amount})
 
         conn.commit()
 

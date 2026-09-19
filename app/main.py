@@ -20,8 +20,10 @@ from app.routers.partner_responses import router as partner_responses_router
 from app.routers.reservations import router as reservations_router
 from app.routers.passengers import router as passengers_router
 from app.routers.payments import router as payments_router
+from app.routers.refunds import router as refunds_router
 from app.routers.commissions import router as commissions_router
 from app.routers.settlements import router as settlements_router
+
 
 logger = get_logger(__name__)
 
@@ -99,6 +101,7 @@ app.include_router(partner_responses_router)
 app.include_router(reservations_router)
 app.include_router(passengers_router)
 app.include_router(payments_router)
+app.include_router(refunds_router)
 app.include_router(commissions_router)
 app.include_router(settlements_router)
 

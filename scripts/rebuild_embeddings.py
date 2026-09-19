@@ -1,23 +1,12 @@
-from sentence_transformers import SentenceTransformer
-
+import argparse
 from app.db import get_connection
+from app.embeddings import MODEL_NAME, get_model, vector_to_pg, check_storage
 
 
-MODEL_NAME = (
-    "sentence-transformers/"
-    "paraphrase-multilingual-MiniLM-L12-v2"
-)
-
-model = SentenceTransformer(MODEL_NAME)
-
-
-def vector_to_pg(vector):
-    return "[" + ",".join(str(float(x)) for x in vector) + "]"
-
-
-def rebuild_embeddings():
+def rebuild_embeddings(apply=False):
     with get_connection() as conn:
         with conn.cursor() as cur:
+            check_storage(cur)
             cur.execute(
                 """
                 SELECT
@@ -32,6 +21,10 @@ def rebuild_embeddings():
 
             print(f"Embeddings encontrados: {len(rows)}")
 
+            if not apply:
+                print("Solo inspección; use --apply para reconstruir explícitamente.")
+                return
+            model = get_model()
             for index, (embedding_id, content) in enumerate(
                 rows,
                 start=1,
@@ -46,10 +39,10 @@ def rebuild_embeddings():
                 cur.execute(
                     """
                     UPDATE entity_embeddings
-                    SET embedding = %s::vector
+                    SET embedding = %s::vector, embedding_model = %s
                     WHERE id = %s
                     """,
-                    (pg_vector, embedding_id),
+                    (pg_vector, MODEL_NAME, embedding_id),
                 )
 
                 if index % 25 == 0 or index == len(rows):
@@ -63,4 +56,6 @@ def rebuild_embeddings():
 
 
 if __name__ == "__main__":
-    rebuild_embeddings()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--apply", action="store_true")
+    rebuild_embeddings(apply=parser.parse_args().apply)

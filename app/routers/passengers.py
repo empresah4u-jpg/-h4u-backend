@@ -2,9 +2,10 @@ from datetime import date
 from typing import List
 
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from app.db import get_connection
+from app.auth import authorize, recheck_owner
 
 
 router = APIRouter(
@@ -23,12 +24,27 @@ class PassengerCreate(BaseModel):
     document_number: str
     is_primary_passenger: bool = False
 
+    @field_validator("first_name", "last_name", "document_number")
+    @classmethod
+    def nonempty(cls, value):
+        value = value.strip()
+        if not value:
+            raise ValueError("El campo no puede estar vacío.")
+        return value
+
+    @field_validator("birth_date")
+    @classmethod
+    def not_future(cls, value):
+        if value > date.today():
+            raise ValueError("La fecha de nacimiento no puede ser futura.")
+        return value
+
 
 class PassengersCreate(BaseModel):
     passengers: List[PassengerCreate]
 
 
-@router.post("/{reservation_code}/passengers", status_code=201)
+@router.post("/{reservation_code}/passengers", status_code=201, dependencies=[authorize("passengers.write")])
 def create_passengers(
     reservation_code: str,
     payload: PassengersCreate,
@@ -98,6 +114,7 @@ def create_passengers(
                     detail="Reserva no encontrada.",
                 )
 
+            recheck_owner(cur, "reservation", reservation_code)
             reservation_id = reservation[0]
             service_request_id = reservation[1]
             expected_passengers = reservation[2]
@@ -112,6 +129,21 @@ def create_passengers(
                         "datos de pasajeros."
                     ),
                 )
+
+            # Validar el conjunto persistido junto con las correcciones del lote.
+            cur.execute("SELECT passenger_number, is_primary_passenger, document_type, document_number FROM request_passengers WHERE service_request_id = %s", (service_request_id,))
+            combined = {r[0]: (r[1], r[2], r[3]) for r in cur.fetchall()}
+            for passenger in payload.passengers:
+                combined[passenger.passenger_number] = (
+                    passenger.is_primary_passenger,
+                    passenger.document_type.strip().lower(),
+                    passenger.document_number.strip(),
+                )
+            if sum(row[0] for row in combined.values()) > 1:
+                raise HTTPException(400, "Solo puede existir un pasajero principal.")
+            documents = [(row[1], row[2]) for row in combined.values()]
+            if len(set(documents)) != len(documents):
+                raise HTTPException(400, "Hay documentos de pasajero repetidos.")
 
             # 2. Validar cada pasajero.
             for passenger in payload.passengers:
@@ -132,7 +164,7 @@ def create_passengers(
                     .upper()
                 )
 
-                if len(nationality_code) != 2:
+                if len(nationality_code) != 2 or not nationality_code.isascii() or not nationality_code.isalpha():
                     raise HTTPException(
                         status_code=400,
                         detail=(

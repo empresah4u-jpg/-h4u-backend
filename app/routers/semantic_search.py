@@ -3,9 +3,9 @@ import unicodedata
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query
-from sentence_transformers import SentenceTransformer
 
 from app.db import get_connection
+from app.embeddings import MODEL_NAME, encode_query, vector_to_pg
 from app.logger import get_logger
 
 
@@ -15,14 +15,6 @@ router = APIRouter(
 )
 
 logger = get_logger(__name__)
-
-
-MODEL_NAME = (
-    "sentence-transformers/"
-    "paraphrase-multilingual-MiniLM-L12-v2"
-)
-
-model = SentenceTransformer(MODEL_NAME)
 
 
 STOP_WORDS = {
@@ -62,13 +54,6 @@ STOP_WORDS = {
     "das",
     "com",
 }
-
-
-def vector_to_pg(vector):
-    return "[" + ",".join(
-        str(float(x))
-        for x in vector
-    ) + "]"
 
 
 def normalize_text(text):
@@ -156,7 +141,7 @@ def semantic_search(
         # 1. Generar embedding de la consulta
         # -------------------------------------------------
 
-        query_embedding = model.encode(
+        query_embedding = encode_query(
             q,
             normalize_embeddings=True,
         )
@@ -183,10 +168,11 @@ def semantic_search(
                         ) AS similarity
                     FROM entity_embeddings
                     WHERE embedding IS NOT NULL
+                      AND embedding_model = %s
                 """
 
                 params = [
-                    pg_vector
+                    pg_vector, MODEL_NAME
                 ]
 
                 if category:
@@ -249,11 +235,13 @@ def semantic_search(
                             ) AS similarity
                         FROM entity_embeddings
                         WHERE embedding IS NOT NULL
+                      AND embedding_model = %s
                           AND content ILIKE %s
                     """
 
                     lexical_params = [
                         pg_vector,
+                        MODEL_NAME,
                         f"%{keyword}%",
                     ]
 

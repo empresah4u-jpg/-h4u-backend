@@ -185,12 +185,10 @@ def global_search(
         return {
             "query": q,
             "category": category,
-            "total": len(results),
+            "total": len(results[:limit]),
             "results": results[:limit],
         }
 
-    except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=str(e)
-        )
+    except Exception:
+        # El manejador central registra el fallo y oculta detalles internos.
+        raise
