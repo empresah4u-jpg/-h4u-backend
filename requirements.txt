@@ -50,3 +50,8 @@ typing-inspection==0.4.2
 typing_extensions==4.16.0
 urllib3==2.6.3
 uvicorn==0.39.0
+PyJWT==2.14.0
+argon2-cffi==25.1.0
+argon2-cffi-bindings==25.1.0
+cffi==2.0.0
+pycparser==2.23

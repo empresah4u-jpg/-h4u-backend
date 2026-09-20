@@ -53,3 +53,20 @@ migración aplicada; crear una nueva para cambios posteriores.
 `schema_snapshot.sql` sigue siendo la instantánea **anterior a 002**. Restaurar
 esa instantánea en una base nueva exige aplicar 002 después. No restaurarla sobre
 una base existente.
+
+## Identidad: migraciones 003 y 004
+
+`003_identity_auth.sql` ya estaba aplicada al iniciar esta fase; se conservó sin
+cambios y se verificó su checksum. Define users y auth_sessions. La migración
+aditiva `004_auth_security.sql` agrega límites persistentes de login y triggers
+de versionado/revocación de identidad. Ambas están registradas en schema_migrations.
+
+```sh
+.venv/bin/python -m scripts.apply_auth_security
+.venv/bin/python -m scripts.audit_identity
+```
+
+El ejecutor de 004 exige 003 aplicada y verifica checksums; no crea usuarios ni
+reaplica 003. La instantánea anterior tampoco incluye estas migraciones. Véase
+[Identidad y autenticación](../docs/identity_authentication.md) para los contratos,
+la configuración y los límites operativos.

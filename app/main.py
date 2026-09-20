@@ -1,10 +1,18 @@
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
+from fastapi.exception_handlers import request_validation_exception_handler
+from starlette.concurrency import run_in_threadpool
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from psycopg import Error as PsycopgError
 
 from app.db import get_connection
 from app.logger import get_logger
+from app.identity import AuthConfigurationError, JWTSettings, JWTIdentityProvider
+from app.services.authentication import AuthenticationService
+from app.routers.authentication import router as authentication_router
 
 from app.routers.hotels import router as hotels_router
 from app.routers.restaurants import router as restaurants_router
@@ -28,10 +36,49 @@ from app.routers.settlements import router as settlements_router
 logger = get_logger(__name__)
 
 
+@asynccontextmanager
+async def lifespan(application: FastAPI):
+    # Fail closed for identity while leaving public catalogs/health available.
+    application.state.identity_provider = None
+    application.state.auth_service = None
+    try:
+        settings = JWTSettings.from_env()
+    except AuthConfigurationError:
+        logger.error("authentication_unavailable invalid JWT configuration")
+    else:
+        application.state.auth_service = await run_in_threadpool(AuthenticationService, settings)
+        application.state.identity_provider = JWTIdentityProvider(settings)
+    try:
+        yield
+    finally:
+        application.state.auth_service = None
+        application.state.identity_provider = None
+
+
 app = FastAPI(
     title="H4U API",
     version="0.3.0",
+    lifespan=lifespan,
 )
+
+
+@app.middleware("http")
+async def auth_response_privacy(request: Request, call_next):
+    response = await call_next(request)
+    if request.url.path.startswith("/auth/"):
+        response.headers["Cache-Control"] = "no-store"
+        response.headers["Pragma"] = "no-cache"
+    return response
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_error_handler(request: Request, exc: RequestValidationError):
+    if request.url.path.startswith("/auth/"):
+        # FastAPI normally echoes invalid inputs, potentially including passwords.
+        errors = [{key: error[key] for key in ("loc", "msg", "type")}
+                  for error in exc.errors()]
+        return JSONResponse(status_code=422, content={"detail": errors})
+    return await request_validation_exception_handler(request, exc)
 
 
 @app.exception_handler(PsycopgError)
@@ -87,6 +134,7 @@ app.add_middleware(
 )
 
 
+app.include_router(authentication_router)
 app.include_router(hotels_router)
 app.include_router(restaurants_router)
 app.include_router(tours_router)
