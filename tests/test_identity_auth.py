@@ -14,7 +14,8 @@ import pytest
 
 from app import auth, identity
 from app.main import app
-from app.routers import reservations
+from app.routers import reservations, partners as partner_router
+from app.services import partner_memberships as membership_service
 from app.services import authentication as service_module
 from app.services.passwords import hash_password, verify_password, HASHER
 from tests.test_commercial import flow, reserve, request as service_request
@@ -25,21 +26,22 @@ def identity_case(flow, monkeypatch):
     db = flow['conn']
     # Shadow identity tables on this rollback-only connection. Never copy real
     # users, hashes, sessions or throttle buckets; all API connections use its proxy.
-    for table in ('users', 'auth_sessions', 'auth_login_limits'):
+    for table in ('users', 'auth_sessions', 'auth_login_limits', 'partner_memberships', 'partner_events'):
         db.execute(f'CREATE TEMP TABLE {table} (LIKE public.{table} INCLUDING ALL) ON COMMIT DROP')
     db.execute('ALTER TABLE pg_temp.auth_sessions ADD FOREIGN KEY (user_id) REFERENCES pg_temp.users(id)')
-    triggers = db.execute("SELECT pg_get_triggerdef(oid) FROM pg_trigger WHERE tgrelid='public.users'::regclass AND NOT tgisinternal").fetchall()
-    for (definition,) in triggers:
-        db.execute(definition.replace(' ON public.users ', ' ON pg_temp.users '))
+    for table in ('users', 'partner_memberships', 'partner_events'):
+        triggers = db.execute("SELECT pg_get_triggerdef(oid) FROM pg_trigger WHERE tgrelid=%s::regclass AND NOT tgisinternal", ('public.'+table,)).fetchall()
+        for (definition,) in triggers:
+            db.execute(definition.replace(' ON public.'+table+' ', ' ON pg_temp.'+table+' '))
     assert db.execute("SELECT 'users'::regclass::oid <> 'public.users'::regclass::oid").fetchone()[0]
-    for module in (identity, service_module, auth):
+    for module in (identity, service_module, auth, partner_router, membership_service):
         monkeypatch.setattr(module, 'get_connection', reservations.get_connection)
     # Never inspect or reuse the production JWT secret in tests.
     monkeypatch.setenv('JWT_SECRET', secrets.token_urlsafe(48))
     monkeypatch.setenv('JWT_ALGORITHM', 'HS256')
     monkeypatch.setenv('JWT_EXPIRE_MINUTES', '60')
 
-    def make_user(role='partner', status='active', owner=None, password=None, stored_hash=None):
+    def make_user(role='partner', status='active', owner=None, password=None, stored_hash=None, membership=True, membership_role='owner', membership_status='active'):
         value = password or secrets.token_urlsafe(24)
         email = uuid4().hex + '@example.invalid'
         traveler_id = partner_id = None
@@ -51,6 +53,9 @@ def identity_case(flow, monkeypatch):
         uid = db.execute('''INSERT INTO users(email,password_hash,role,status,traveler_id,partner_id)
             VALUES (%s,%s,%s,%s,%s,%s) RETURNING id''',
             (email, hashed, role, status, traveler_id, partner_id)).fetchone()[0]
+        if role == 'partner' and membership:
+            db.execute('INSERT INTO partner_memberships(partner_id,user_id,membership_role,status) VALUES (%s,%s,%s,%s)',
+                       (partner_id,uid,membership_role,membership_status))
         return {'id': uid, 'email': email, 'password': SecretStr(value), 'role': role}
 
     with TestClient(app, raise_server_exceptions=False) as client:

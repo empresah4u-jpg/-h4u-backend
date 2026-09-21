@@ -5,7 +5,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from app.db import get_connection
-from app.auth import authorize, recheck_owner
+from app.auth import authorize, recheck_owner, prelock_partner
 from app.services.commercial_eligibility import require_bookable_candidate
 
 
@@ -28,6 +28,7 @@ def create_reservation(payload: ReservationCreate):
 
     with get_connection() as conn:
         with conn.cursor() as cur:
+            prelock_partner(cur, "request", payload.service_request_code)
 
             # 1. Bloquear la solicitud durante la creación.
             cur.execute(
@@ -367,6 +368,7 @@ def cancel_reservation(
 
     with get_connection() as conn:
         with conn.cursor() as cur:
+            prelock_partner(cur, "reservation", reservation_code)
 
             # 1. Bloquear la reserva para evitar
             # cancelaciones concurrentes.

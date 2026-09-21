@@ -4,7 +4,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from app.db import get_connection
-from app.auth import authorize, recheck_owner
+from app.auth import authorize, recheck_owner, prelock_partner
 
 
 router = APIRouter(
@@ -59,6 +59,7 @@ def create_payment(payload: PaymentCreate):
 
     with get_connection() as conn:
         with conn.cursor() as cur:
+            prelock_partner(cur, "reservation", payload.reservation_code)
 
             # 1. Bloquear la reserva.
             cur.execute(
@@ -262,6 +263,7 @@ def create_payment(payload: PaymentCreate):
 
 
 def _lock_cash_payment(cur, payment_code):
+    prelock_partner(cur, "payment", payment_code)
     # Todas las operaciones financieras bloquean primero reserva y luego pago.
     cur.execute("SELECT reservation_id FROM payments WHERE code = %s", (payment_code,))
     row = cur.fetchone()

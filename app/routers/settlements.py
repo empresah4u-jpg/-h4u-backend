@@ -6,7 +6,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from app.db import get_connection
-from app.auth import authorize, recheck_owner
+from app.auth import authorize, recheck_owner, audit_actor
 from app.services.finance import (allocate_credits, lock_settlement_partner,
                                   validate_settlement_balance, snapshot_settlement)
 
@@ -58,6 +58,7 @@ def create_settlement(payload: SettlementCreate):
 
     with get_connection() as conn:
         with conn.cursor() as cur:
+            cur.execute("SELECT set_config('h4u.partner_actor',%s,true)", (audit_actor()[0],))
 
             # 2. Obtener y bloquear el partner.
             cur.execute(
@@ -346,6 +347,7 @@ def report_settlement_payment(
 
     with get_connection() as conn:
         with conn.cursor() as cur:
+            cur.execute("SELECT set_config('h4u.partner_actor',%s,true)", (audit_actor()[0],))
             lock_settlement_partner(cur, settlement_code)
 
             # 1. Bloquear el settlement.
@@ -494,6 +496,7 @@ def verify_settlement_payment(settlement_code: str):
 
     with get_connection() as conn:
         with conn.cursor() as cur:
+            cur.execute("SELECT set_config('h4u.partner_actor',%s,true)", (audit_actor()[0],))
             # Mismo orden que creación y vencimientos: partner antes del cierre.
             cur.execute("SELECT partner_id FROM partner_settlements WHERE code = %s", (settlement_code,))
             owner = cur.fetchone()
@@ -719,9 +722,11 @@ def verify_settlement_payment(settlement_code: str):
                     UPDATE partners
                     SET
                         status = 'active',
+                        suspension_source = NULL,
                         updated_at = now()
                     WHERE id = %s
                       AND status = 'suspended'
+                      AND suspension_source = 'debt'
                     RETURNING code
                     """,
                     (settlement[2],),
@@ -760,6 +765,7 @@ def process_overdue_settlements():
 
     with get_connection() as conn:
         with conn.cursor() as cur:
+            cur.execute("SELECT set_config('h4u.partner_actor',%s,true)", (audit_actor()[0],))
             # Fijar primero el conjunto de partners y bloquearlo en orden estable.
             cur.execute("""
                 SELECT p.id FROM partners p
@@ -844,6 +850,7 @@ def process_overdue_settlements():
                 UPDATE partners
                 SET
                     status = 'suspended',
+                    suspension_source = 'debt',
                     updated_at = now()
                 WHERE id = ANY(%s)
                   AND status = 'active'

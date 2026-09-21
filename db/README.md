@@ -70,3 +70,21 @@ El ejecutor de 004 exige 003 aplicada y verifica checksums; no crea usuarios ni
 reaplica 003. La instantánea anterior tampoco incluye estas migraciones. Véase
 [Identidad y autenticación](../docs/identity_authentication.md) para los contratos,
 la configuración y los límites operativos.
+
+
+## Partners: migración 005
+
+`005_partner_memberships.sql` incorpora membresías multiusuario, eventos de auditoría
+append-only y causa de suspensión. Conserva users.partner_id como ancla legacy y
+sustituye únicamente su índice único por uno no único, sin borrar datos.
+
+```sh
+.venv/bin/python -m scripts.apply_partner_memberships
+.venv/bin/python -m scripts.audit_partners
+```
+
+005 ya está aplicada y registrada con checksum. No editar 001–005; cambios nuevos
+requieren otra migración. No hay downgrade destructivo automático: conservar auditoría
+y comprobar duplicados antes de considerar restaurar la unicidad anterior.
+Véase [Arquitectura Partners](../docs/partners_architecture.md). La instantánea antigua
+no incluye estas migraciones; no restaurarla sobre la base existente.

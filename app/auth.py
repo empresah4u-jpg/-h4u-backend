@@ -15,6 +15,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from starlette.concurrency import run_in_threadpool
 
 from app.db import get_connection
+from app.services.partner_memberships import require_partner_member, MANAGER_ROLES, MEMBER_ROLES
 
 Role = Literal['tourist', 'partner', 'operator', 'admin']
 
@@ -111,15 +112,26 @@ def check_owner(actor: Principal, resource: str, identifier):
         with conn.cursor() as cur:
             cur.execute(OWNERS[resource], (identifier,))
             owner = cur.fetchone()
-    _assert_owner(actor, owner)
+            _assert_resource_owner(cur, actor, resource, owner)
 
 
-def _assert_owner(actor, owner):
-    index = 0 if actor.role == 'tourist' else 1
-    expected = actor.traveler_id if index == 0 else actor.partner_id
-    # Do not reveal whether a foreign resource exists.
-    if not owner or owner[index] is None or owner[index] != expected:
+def _assert_resource_owner(cur, actor, resource, owner):
+    if actor.role == 'partner':
+        if not owner or owner[1] is None:
+            raise HTTPException(403, 'No tiene acceso a este recurso.')
+        require_partner_member(cur, actor, owner[1],
+            roles=MANAGER_ROLES if resource == 'settlement' else MEMBER_ROLES,
+            operation='settlement_report' if resource == 'settlement' else 'operate')
+    elif not owner or owner[0] is None or owner[0] != actor.traveler_id:
         raise HTTPException(403, 'No tiene acceso a este recurso.')
+
+
+def prelock_partner(cur, resource, identifier):
+    """Partner before reservation/payment locks, matching the financial lock order."""
+    actor = _current_actor.get()
+    if actor is not None and actor.role == 'partner':
+        cur.execute(OWNERS[resource], (identifier,))
+        _assert_resource_owner(cur, actor, resource, cur.fetchone())
 
 
 def recheck_owner(cur, resource, identifier):
@@ -131,7 +143,7 @@ def recheck_owner(cur, resource, identifier):
     actor = _current_actor.get()
     if actor is not None and actor.role not in STAFF:
         cur.execute(OWNERS[resource], (identifier,))
-        _assert_owner(actor, cur.fetchone())
+        _assert_resource_owner(cur, actor, resource, cur.fetchone())
 
 
 def authorize(action: str):

@@ -9,6 +9,7 @@ from app import auth
 from app.main import app
 from app.routers import reservations as r
 from tests.test_commercial import flow, request, reserve, passenger, payment
+from tests.test_identity_auth import identity_case
 
 
 @contextmanager
@@ -44,8 +45,9 @@ def test_financial_admin_operations_reject_other_roles(path,role):
 
 
 @pytest.fixture
-def ownership(flow,monkeypatch):
-    monkeypatch.setattr(auth,'get_connection',r.get_connection)
+def ownership(identity_case):
+    flow = identity_case['flow']
+    flow['partner_user'] = identity_case['user']()['id']
     return flow
 
 
@@ -54,7 +56,7 @@ def test_partner_cannot_cancel_other_reservation(ownership):
     with as_actor(auth.Principal(subject='other-partner',role='partner',partner_id=uuid4())) as client:
         assert client.post('/reservations/'+res['code']+'/cancel',json={'reason':'foreign'}).status_code==403
     assert ownership['conn'].execute('SELECT status FROM reservations WHERE code=%s',(res['code'],)).fetchone()[0]=='awaiting_passenger_data'
-    with as_actor(auth.Principal(subject='owner',role='partner',partner_id=ownership['partner'])) as client:
+    with as_actor(auth.Principal(subject=str(ownership['partner_user']),role='partner',partner_id=ownership['partner'])) as client:
         assert client.post('/reservations/'+res['code']+'/cancel',json={'reason':'own'}).status_code==200
 
 
@@ -63,7 +65,7 @@ def test_partner_response_ownership(ownership):
     body={'request_partner_id':req['candidates'][0]['request_partner_id'],'action':'accept'}
     with as_actor(auth.Principal(subject='other',role='partner',partner_id=uuid4())) as client:
         assert client.post('/partner-responses',json=body).status_code==403
-    with as_actor(auth.Principal(subject='owner',role='partner',partner_id=ownership['partner'])) as client:
+    with as_actor(auth.Principal(subject=str(ownership['partner_user']),role='partner',partner_id=ownership['partner'])) as client:
         assert client.post('/partner-responses',json=body).status_code==200
 
 
@@ -127,7 +129,7 @@ def test_partner_cannot_report_foreign_settlement(ownership):
     s=settlement(ownership)
     with as_actor(auth.Principal(subject='foreign',role='partner',partner_id=uuid4())) as client:
         assert client.post('/settlements/'+s['code']+'/report-payment',json={'payment_method':'cash'}).status_code==403
-    with as_actor(auth.Principal(subject='owner',role='partner',partner_id=ownership['partner'])) as client:
+    with as_actor(auth.Principal(subject=str(ownership['partner_user']),role='partner',partner_id=ownership['partner'])) as client:
         assert client.post('/settlements/'+s['code']+'/report-payment',json={'payment_method':'cash'}).status_code==200
 
 

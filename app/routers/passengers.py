@@ -5,7 +5,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field, field_validator
 
 from app.db import get_connection
-from app.auth import authorize, recheck_owner
+from app.auth import authorize, recheck_owner, prelock_partner
 
 
 router = APIRouter(
@@ -83,6 +83,7 @@ def create_passengers(
 
     with get_connection() as conn:
         with conn.cursor() as cur:
+            prelock_partner(cur, "reservation", reservation_code)
 
             # 1. Bloquear la reserva mientras registramos
             # los pasajeros.

@@ -14,6 +14,7 @@ from app.identity import AuthConfigurationError, JWTSettings, JWTIdentityProvide
 from app.services.authentication import AuthenticationService
 from app.routers.authentication import router as authentication_router
 
+from app.routers.partners import router as partners_router
 from app.routers.hotels import router as hotels_router
 from app.routers.restaurants import router as restaurants_router
 from app.routers.tours import router as tours_router
@@ -135,6 +136,7 @@ app.add_middleware(
 
 
 app.include_router(authentication_router)
+app.include_router(partners_router)
 app.include_router(hotels_router)
 app.include_router(restaurants_router)
 app.include_router(tours_router)

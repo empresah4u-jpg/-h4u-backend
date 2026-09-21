@@ -7,7 +7,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field, field_validator
 
 from app.db import get_connection
-from app.auth import authorize, recheck_owner
+from app.auth import authorize, recheck_owner, prelock_partner
 from app.services.commercial_eligibility import require_bookable_candidate
 
 
@@ -64,6 +64,7 @@ def respond_to_request(payload: PartnerResponseCreate):
 
     with get_connection() as conn:
         with conn.cursor() as cur:
+            prelock_partner(cur, "candidate", payload.request_partner_id)
 
             # Obtener candidatura.
             cur.execute(
