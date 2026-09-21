@@ -40,3 +40,4 @@ data/samples/*
 .pytest_cache/
 .coverage
 htmlcov/
+docs/CURRENT_STATE.local.md

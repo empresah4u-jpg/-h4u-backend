@@ -1,5 +1,4 @@
 """Access-token authentication; identities are provisioned only through trusted administration."""
-import re
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
@@ -8,6 +7,7 @@ from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator
 
 from app.auth import Principal, bearer, get_current_actor
 from app.services.authentication import AuthenticationService, InvalidCredentials, LoginLimited
+from app.services.email_validation import normalize_email
 
 router = APIRouter(prefix='/auth', tags=['Authentication'])
 
@@ -20,10 +20,7 @@ class LoginPayload(BaseModel):
     @field_validator('email')
     @classmethod
     def normalize_email(cls, value):
-        value = value.strip().lower()
-        if not value.isascii() or not re.fullmatch(r'[^@\s]{1,64}@[^@\s]{1,255}', value):
-            raise ValueError('Formato de email no válido.')
-        return value
+        return normalize_email(value)
 
     @field_validator('password')
     @classmethod
