@@ -94,9 +94,11 @@ No hacen falta migraciones nuevas ni cambios de JWT_SECRET para este bootstrap.
 .venv/bin/python -m pytest -q tests/test_admin_bootstrap.py tests/test_identity_auth.py
 ```
 
-La base de pruebas debe disponer del esquema vigente y no contener administradores
-reales; el fixture aborta si los encuentra. Las inserciones permanecen dentro de
-transacciones force_rollback. No se ejecuta el CLI interactivo para crear cuentas reales.
+La base de pruebas debe disponer del esquema vigente. El fixture crea tablas TEMP
+de identidad vacías, con restricciones e índices copiados y triggers de users;
+no copia usuarios, hashes ni sesiones reales. Las inserciones permanecen dentro de
+transacciones force_rollback. El lock de bootstrap se comprueba en pg_locks sobre
+la tabla temporal, sin bloquear al administrador real. No se ejecuta el CLI interactivo para crear cuentas reales.
 Se prueban creación, roles/vínculos, hashing, normalización, validaciones, duplicados,
 admins inactivos, rollback, exclusión de escritores concurrentes, terminal insegura,
 privacidad y recorrido completo de login, sesión, permisos y logout.

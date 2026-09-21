@@ -330,7 +330,7 @@ def semantic_search(
                                 website,
                                 verification_status
                             FROM hotels
-                            WHERE id = %s
+                            WHERE id = %s AND status = 'active'
                             """,
                             (
                                 entity_id,
@@ -398,7 +398,7 @@ def semantic_search(
                                 longitude,
                                 verification_status
                             FROM restaurants
-                            WHERE id = %s
+                            WHERE id = %s AND status = 'active'
                             """,
                             (
                                 entity_id,
@@ -464,7 +464,7 @@ def semantic_search(
                             FROM tours t
                             LEFT JOIN tour_operators op
                                 ON op.id = t.tour_operator_id
-                            WHERE t.id = %s
+                            WHERE t.id = %s AND t.status = 'active'
                             """,
                             (
                                 entity_id,
@@ -526,7 +526,7 @@ def semantic_search(
                                 longitude,
                                 verification_status
                             FROM attractions
-                            WHERE id = %s
+                            WHERE id = %s AND status = 'active'
                             """,
                             (
                                 entity_id,

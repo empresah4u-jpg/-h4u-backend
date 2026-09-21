@@ -1,7 +1,6 @@
 """Real JWT/Argon2/PostgreSQL; ephemeral credentials and rollback-only user fixtures."""
 import asyncio
 from datetime import datetime, timezone
-from pathlib import Path
 import secrets
 import threading
 from uuid import uuid4
@@ -24,8 +23,15 @@ from tests.test_commercial import flow, reserve, request as service_request
 @pytest.fixture
 def identity_case(flow, monkeypatch):
     db = flow['conn']
-    if db.execute("SELECT to_regclass('auth_login_limits')").fetchone()[0] is None:
-        db.execute(Path('db/migrations/004_auth_security.sql').read_text())
+    # Shadow identity tables on this rollback-only connection. Never copy real
+    # users, hashes, sessions or throttle buckets; all API connections use its proxy.
+    for table in ('users', 'auth_sessions', 'auth_login_limits'):
+        db.execute(f'CREATE TEMP TABLE {table} (LIKE public.{table} INCLUDING ALL) ON COMMIT DROP')
+    db.execute('ALTER TABLE pg_temp.auth_sessions ADD FOREIGN KEY (user_id) REFERENCES pg_temp.users(id)')
+    triggers = db.execute("SELECT pg_get_triggerdef(oid) FROM pg_trigger WHERE tgrelid='public.users'::regclass AND NOT tgisinternal").fetchall()
+    for (definition,) in triggers:
+        db.execute(definition.replace(' ON public.users ', ' ON pg_temp.users '))
+    assert db.execute("SELECT 'users'::regclass::oid <> 'public.users'::regclass::oid").fetchone()[0]
     for module in (identity, service_module, auth):
         monkeypatch.setattr(module, 'get_connection', reservations.get_connection)
     # Never inspect or reuse the production JWT secret in tests.

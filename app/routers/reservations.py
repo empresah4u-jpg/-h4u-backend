@@ -6,6 +6,7 @@ from pydantic import BaseModel
 
 from app.db import get_connection
 from app.auth import authorize, recheck_owner
+from app.services.commercial_eligibility import require_bookable_candidate
 
 
 router = APIRouter(
@@ -185,6 +186,7 @@ def create_reservation(payload: ReservationCreate):
                 )
 
             request_partner_id = winner[0]
+            require_bookable_candidate(cur, request_partner_id)
             winner_partner_id = winner[1]
             winner_status = winner[2]
             proposed_time = winner[3]

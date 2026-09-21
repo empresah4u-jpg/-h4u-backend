@@ -7,7 +7,6 @@ from uuid import uuid4
 import psycopg
 import pytest
 
-from app.db import get_connection
 from app.routers import reservations
 from app.services import admin_bootstrap as bootstrap
 from app.services.passwords import verify_password
@@ -93,13 +92,12 @@ def test_failure_after_insert_rolls_back(case, monkeypatch):
 
 def test_bootstrap_lock_excludes_concurrent_writers(case):
     bootstrap.create_first_admin(*credentials())
-    # Outer test rollback retains the production lock. Another connection must wait,
-    # including writers which do not participate in an advisory-lock protocol.
-    with get_connection() as other:
-        other.execute("SET LOCAL lock_timeout='100ms'")
-        with pytest.raises(psycopg.errors.LockNotAvailable):
-            other.execute('LOCK TABLE users IN ROW EXCLUSIVE MODE')
-        other.rollback()
+    # PostgreSQL retains this writer-excluding lock until the outer rollback.
+    # Do not try to lock public.users: it contains the real administrator.
+    locks = case['db'].execute("""SELECT mode FROM pg_locks
+        WHERE pid=pg_backend_pid() AND relation='pg_temp.users'::regclass
+          AND granted""").fetchall()
+    assert ('ShareRowExclusiveLock',) in locks
 
 
 def prepare_cli(monkeypatch, email, password):

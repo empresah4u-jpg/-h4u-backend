@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field, field_validator
 
 from app.db import get_connection
 from app.auth import authorize, recheck_owner
+from app.services.commercial_eligibility import require_bookable_candidate
 
 
 router = APIRouter(
@@ -105,6 +106,8 @@ def respond_to_request(payload: PartnerResponseCreate):
             if not current:
                 raise HTTPException(404, "Candidatura no encontrada.")
             recheck_owner(cur, "candidate", payload.request_partner_id)
+            if action != 'reject':
+                require_bookable_candidate(cur, payload.request_partner_id)
             candidate_status = current[0]
             request_code = candidate[4]
             partner_code = candidate[5]
