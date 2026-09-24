@@ -59,6 +59,8 @@ def create_service_request(payload: ServiceRequestCreate):
 
     with get_connection() as conn:
         with conn.cursor() as cur:
+            if payload.simulation:
+                cur.execute("SET LOCAL h4u.messaging_simulation = 'true'")
 
             # 1. Validar sesión activa.
             cur.execute(

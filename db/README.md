@@ -97,3 +97,15 @@ rollback antes de aplicarse y registrarse con checksum. No modifica cuentas real
 finanzas ni migraciones previas. Ejecutores: `scripts.apply_admin_audit` y
 `scripts.audit_admin`. No editar 001–006; usar 007+ para cambios posteriores.
 Véase [H4U Admin](../docs/h4u_admin_architecture.md) para política, servicios y límites.
+
+## 007 — WhatsApp messaging
+
+`007_whatsapp_messaging.sql` añade transporte de canal, inbound, outbox, eventos
+comerciales y auditoría de vinculaciones/consentimiento. También añade la marca
+`service_requests.messaging_suppressed` para excluir simulaciones y sus eventos futuros.
+Captura eventos comerciales por triggers; nunca realiza HTTP en la base de datos.
+
+Aplicación explícita/checksum: `.venv/bin/python -m scripts.apply_whatsapp_messaging`.
+Auditoría de conteos: `.venv/bin/python -m scripts.audit_whatsapp`.
+007 ya aplicada tras dry-run y rollback verificado: NO editar 001–007; próxima 008+.
+Ver `docs/whatsapp_architecture.md` para operación del worker, privacidad y Meta pendiente.
