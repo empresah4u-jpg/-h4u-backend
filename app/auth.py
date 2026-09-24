@@ -73,6 +73,7 @@ class Policy:
 
 
 STAFF = frozenset({'admin', 'operator'})
+ADMIN_ONLY = frozenset({'admin'})
 ALL = STAFF | {'tourist', 'partner'}
 POLICIES = {
     'request.create': Policy(STAFF | {'tourist'}, 'session', 'session_id'),
@@ -81,14 +82,14 @@ POLICIES = {
     'reservation.cancel': Policy(ALL, 'reservation', 'reservation_code'),
     'passengers.write': Policy(ALL, 'reservation', 'reservation_code'),
     'payment.create': Policy(ALL, 'reservation', 'reservation_code'),
-    'payment.partner': Policy(STAFF | {'partner'}, 'payment', 'payment_code'),
-    'payment.customer': Policy(STAFF | {'tourist'}, 'payment', 'payment_code'),
-    'refund.create': Policy(STAFF),
-    'commission.create': Policy(STAFF),
-    'settlement.create': Policy(STAFF),
-    'settlement.report': Policy(STAFF | {'partner'}, 'settlement', 'settlement_code'),
-    'settlement.verify': Policy(STAFF),
-    'settlement.overdue': Policy(STAFF),
+    'payment.partner': Policy(ADMIN_ONLY | {'partner'}, 'payment', 'payment_code'),
+    'payment.customer': Policy(ADMIN_ONLY | {'tourist'}, 'payment', 'payment_code'),
+    'refund.create': Policy(ADMIN_ONLY),
+    'commission.create': Policy(ADMIN_ONLY),
+    'settlement.create': Policy(ADMIN_ONLY),
+    'settlement.report': Policy(ADMIN_ONLY | {'partner'}, 'settlement', 'settlement_code'),
+    'settlement.verify': Policy(ADMIN_ONLY),
+    'settlement.overdue': Policy(ADMIN_ONLY),
 }
 
 # Constant SQL only. Result is (traveler owner, partner owner).

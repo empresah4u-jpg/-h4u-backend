@@ -102,7 +102,7 @@ def test_verified_provider_adapter(monkeypatch):
     class Provider:
         async def authenticate(self,token):
             if token=='valid-test-token':
-                return auth.Principal(subject='operator-from-provider',role='operator')
+                return auth.Principal(subject='admin-from-provider',role='admin')
             return None
     monkeypatch.setattr(app.state,'identity_provider',Provider(),raising=False)
     client=TestClient(app)

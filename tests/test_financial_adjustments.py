@@ -141,7 +141,7 @@ def test_overallocated_adjustment_rejected_by_database(flow):
 
 def test_http_refund_actor_audit_and_key_requirement(flow):
     _,pay,_=commission(flow)
-    with as_actor(Principal(subject='verified-operator-42',role='operator')) as client:
+    with as_actor(Principal(subject='verified-admin-42',role='admin')) as client:
         body={'payment_code':pay['code'],'amount':20,'reason':'Audit'}
         assert client.post('/refunds',json=body).status_code==400
         body['idempotency_key']='audit-http-refund'
@@ -149,7 +149,7 @@ def test_http_refund_actor_audit_and_key_requirement(flow):
         assert response.status_code==201
         assert client.post('/refunds',json=body).json()==response.json()
     row=flow['conn'].execute('SELECT actor_subject,actor_role FROM refunds WHERE id=%s',(response.json()['id'],)).fetchone()
-    assert row==('verified-operator-42','operator')
+    assert row==('verified-admin-42','admin')
 
 
 def test_refund_transaction_rolls_back_on_invalid_commission(flow):

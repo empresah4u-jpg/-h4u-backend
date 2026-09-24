@@ -727,6 +727,9 @@ def verify_settlement_payment(settlement_code: str):
                     WHERE id = %s
                       AND status = 'suspended'
                       AND suspension_source = 'debt'
+                      AND EXISTS (SELECT 1 FROM partner_memberships m JOIN users u ON u.id=m.user_id
+                          WHERE m.partner_id=partners.id AND m.membership_role='owner'
+                          AND m.status='active' AND u.role='partner' AND u.status='active')
                     RETURNING code
                     """,
                     (settlement[2],),

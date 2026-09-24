@@ -14,7 +14,8 @@ import pytest
 
 from app import auth, identity
 from app.main import app
-from app.routers import reservations, partners as partner_router
+from app.routers import reservations, partners as partner_router, admin as admin_router
+from app.services import administration as admin_service
 from app.services import partner_memberships as membership_service
 from app.services import authentication as service_module
 from app.services.passwords import hash_password, verify_password, HASHER
@@ -26,15 +27,15 @@ def identity_case(flow, monkeypatch):
     db = flow['conn']
     # Shadow identity tables on this rollback-only connection. Never copy real
     # users, hashes, sessions or throttle buckets; all API connections use its proxy.
-    for table in ('users', 'auth_sessions', 'auth_login_limits', 'partner_memberships', 'partner_events'):
+    for table in ('users', 'auth_sessions', 'auth_login_limits', 'partner_memberships', 'partner_events', 'admin_events'):
         db.execute(f'CREATE TEMP TABLE {table} (LIKE public.{table} INCLUDING ALL) ON COMMIT DROP')
     db.execute('ALTER TABLE pg_temp.auth_sessions ADD FOREIGN KEY (user_id) REFERENCES pg_temp.users(id)')
-    for table in ('users', 'partner_memberships', 'partner_events'):
+    for table in ('users', 'partner_memberships', 'partner_events', 'admin_events'):
         triggers = db.execute("SELECT pg_get_triggerdef(oid) FROM pg_trigger WHERE tgrelid=%s::regclass AND NOT tgisinternal", ('public.'+table,)).fetchall()
         for (definition,) in triggers:
             db.execute(definition.replace(' ON public.'+table+' ', ' ON pg_temp.'+table+' '))
     assert db.execute("SELECT 'users'::regclass::oid <> 'public.users'::regclass::oid").fetchone()[0]
-    for module in (identity, service_module, auth, partner_router, membership_service):
+    for module in (identity, service_module, auth, partner_router, membership_service, admin_router, admin_service):
         monkeypatch.setattr(module, 'get_connection', reservations.get_connection)
     # Never inspect or reuse the production JWT secret in tests.
     monkeypatch.setenv('JWT_SECRET', secrets.token_urlsafe(48))

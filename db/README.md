@@ -88,3 +88,12 @@ requieren otra migración. No hay downgrade destructivo automático: conservar a
 y comprobar duplicados antes de considerar restaurar la unicidad anterior.
 Véase [Arquitectura Partners](../docs/partners_architecture.md). La instantánea antigua
 no incluye estas migraciones; no restaurarla sobre la base existente.
+
+
+## H4U Admin: migración 006
+
+`006_admin_audit.sql` agrega el ledger administrativo append-only. Se ensayó con
+rollback antes de aplicarse y registrarse con checksum. No modifica cuentas reales,
+finanzas ni migraciones previas. Ejecutores: `scripts.apply_admin_audit` y
+`scripts.audit_admin`. No editar 001–006; usar 007+ para cambios posteriores.
+Véase [H4U Admin](../docs/h4u_admin_architecture.md) para política, servicios y límites.

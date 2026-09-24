@@ -54,6 +54,7 @@ def test_no_membership_not_legacy_id_or_claims(identity_case):
 @pytest.mark.parametrize('new_status', ['suspended','revoked'])
 def test_old_jwt_loses_business_access_immediately(identity_case, new_status):
     t = identity_case
+    t['user']()  # Another effective owner; removal of the last is now forbidden.
     user = t['user']()
     auth = headers(t['token'](user))
     actor = admin(t)
@@ -188,6 +189,7 @@ def test_administrative_suspension_survives_paid_settlement(identity_case):
 
 def test_debt_suspension_can_be_cleared_by_settlement(identity_case):
     t = identity_case
+    t['user']()  # Another effective owner; removal of the last is now forbidden.
     commission(t['flow'])
     s = settlement(t['flow'])
     t['db'].execute("UPDATE partners SET status='suspended',suspension_source='debt' WHERE id=%s",(t['flow']['partner'],))
@@ -248,6 +250,7 @@ def test_secondary_membership_authorizes_commercial_resource(identity_case):
 
 def test_old_jwt_downgrade_restricts_financial_report(identity_case):
     t = identity_case
+    t['user']()  # Another effective owner; removal of the last is now forbidden.
     user = t['user']()
     auth = headers(t['token'](user))
     commission(t['flow'])

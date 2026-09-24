@@ -14,6 +14,7 @@ from app.identity import AuthConfigurationError, JWTSettings, JWTIdentityProvide
 from app.services.authentication import AuthenticationService
 from app.routers.authentication import router as authentication_router
 
+from app.routers.admin import router as admin_router
 from app.routers.partners import router as partners_router
 from app.routers.hotels import router as hotels_router
 from app.routers.restaurants import router as restaurants_router
@@ -66,7 +67,7 @@ app = FastAPI(
 @app.middleware("http")
 async def auth_response_privacy(request: Request, call_next):
     response = await call_next(request)
-    if request.url.path.startswith("/auth/"):
+    if request.url.path.startswith(("/auth/", "/admin/")):
         response.headers["Cache-Control"] = "no-store"
         response.headers["Pragma"] = "no-cache"
     return response
@@ -74,7 +75,7 @@ async def auth_response_privacy(request: Request, call_next):
 
 @app.exception_handler(RequestValidationError)
 async def validation_error_handler(request: Request, exc: RequestValidationError):
-    if request.url.path.startswith("/auth/"):
+    if request.url.path.startswith(("/auth/", "/admin/")):
         # FastAPI normally echoes invalid inputs, potentially including passwords.
         errors = [{key: error[key] for key in ("loc", "msg", "type")}
                   for error in exc.errors()]
@@ -87,13 +88,14 @@ async def database_error_handler(
     request: Request,
     exc: PsycopgError,
 ):
-    logger.exception(
-        "database_error path=%s",
-        request.url.path,
-    )
+    if request.url.path.startswith('/admin/'):
+        logger.error('admin_database_error type=%s', type(exc).__name__)
+    else:
+        logger.exception('database_error path=%s', request.url.path)
 
     return JSONResponse(
         status_code=500,
+        headers={"Cache-Control": "no-store"},
         content={
             "error": "database_error",
             "detail": (
@@ -109,13 +111,14 @@ async def general_error_handler(
     request: Request,
     exc: Exception,
 ):
-    logger.exception(
-        "internal_server_error path=%s",
-        request.url.path,
-    )
+    if request.url.path.startswith('/admin/'):
+        logger.error('admin_internal_error type=%s', type(exc).__name__)
+    else:
+        logger.exception('internal_server_error path=%s', request.url.path)
 
     return JSONResponse(
         status_code=500,
+        headers={"Cache-Control": "no-store"},
         content={
             "error": "internal_server_error",
             "detail": "Ocurrió un error interno.",
@@ -137,6 +140,7 @@ app.add_middleware(
 
 app.include_router(authentication_router)
 app.include_router(partners_router)
+app.include_router(admin_router)
 app.include_router(hotels_router)
 app.include_router(restaurants_router)
 app.include_router(tours_router)

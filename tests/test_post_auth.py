@@ -105,6 +105,10 @@ def test_staff_refund_records_real_actor_and_idempotency(identity_case, role):
     auth = headers(t['token'](user))
     body = {'payment_code': payment['code'], 'amount': 30, 'reason': 'test', 'idempotency_key': uuid4().hex}
     first = t['client'].post('/refunds', headers=auth, json=body)
+    if role == 'operator':
+        assert first.status_code == 403
+        assert t['db'].execute('SELECT count(*) FROM refunds WHERE payment_id=%s',(payment['id'],)).fetchone()[0]==0
+        return
     assert first.status_code == 201
     assert t['client'].post('/refunds', headers=auth, json=body).json() == first.json()
     assert t['db'].execute('SELECT actor_subject,actor_role FROM refunds WHERE id=%s', (first.json()['id'],)).fetchone() == (str(user['id']), role)
