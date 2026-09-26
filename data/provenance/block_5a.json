@@ -1,0 +1,453 @@
+{
+  "reviewed_at": "2026-09-26T17:56:26.272636+00:00",
+  "sources": [
+    {
+      "id": "c6746218-e5ca-404c-a4be-91cdabbae2b5",
+      "name": "Casa Andina Select Paracas technical sheet",
+      "url": "https://fichas.casa-andina.com/cas_paracas_en.pdf",
+      "links": [
+        {
+          "entity_type": "hotel",
+          "entity_id": "25999098-90d5-480e-bc5b-f96a755cf154",
+          "code": "HOT002",
+          "name": "Casa Andina Select Paracas",
+          "evidence": "Ficha oficial, página 1: identifica el hotel y su dirección km 18.5. No se crea venue."
+        }
+      ]
+    },
+    {
+      "id": "2cd4c0d7-2ecf-40dd-b2d5-306eb537d1e7",
+      "name": "MINCETUR - Safe Travels Ica circuits",
+      "url": "https://consultasenlinea.mincetur.gob.pe/safeTravels/destinos/PLANTILLA_DESTINOS_ICA_21_03.pdf",
+      "links": [
+        {
+          "entity_type": "attraction",
+          "entity_id": "9647c35d-568e-4c3f-974e-c3655a805c6f",
+          "code": "ATT002",
+          "name": "Islas Ballestas",
+          "evidence": "PDF MINCETUR, página 1: atractivo nombrado en el circuito; respaldo histórico, no certificación vigente."
+        },
+        {
+          "entity_type": "attraction",
+          "entity_id": "dfc9b30a-248c-4585-910f-96116736603a",
+          "code": "ATT003",
+          "name": "El Candelabro de Paracas",
+          "evidence": "PDF MINCETUR, página 1: atractivo nombrado en el circuito; respaldo histórico, no certificación vigente."
+        },
+        {
+          "entity_type": "attraction",
+          "entity_id": "87550b50-a772-48e4-9fa0-0d61e1a199e5",
+          "code": "ATT004",
+          "name": "Playa Roja",
+          "evidence": "PDF MINCETUR, página 1: atractivo nombrado en el circuito; respaldo histórico, no certificación vigente."
+        },
+        {
+          "entity_type": "attraction",
+          "entity_id": "be35b720-7a35-42ee-bdf5-1a666b817cc1",
+          "code": "ATT005",
+          "name": "Playa La Mina",
+          "evidence": "PDF MINCETUR, página 1: atractivo nombrado en el circuito; respaldo histórico, no certificación vigente."
+        },
+        {
+          "entity_type": "attraction",
+          "entity_id": "7c575a87-c8c1-4c12-a398-8607dcc33a6d",
+          "code": "ATT006",
+          "name": "Playa Raspón",
+          "evidence": "PDF MINCETUR, página 1: atractivo nombrado en el circuito; respaldo histórico, no certificación vigente."
+        },
+        {
+          "entity_type": "attraction",
+          "entity_id": "fe367eb5-f542-4696-84a5-1572220a42f9",
+          "code": "ATT007",
+          "name": "Playa Yumaque",
+          "evidence": "PDF MINCETUR, página 1: atractivo nombrado en el circuito; respaldo histórico, no certificación vigente."
+        },
+        {
+          "entity_type": "attraction",
+          "entity_id": "37226677-5f9d-4997-ad91-d8cbb401fb20",
+          "code": "ATT014",
+          "name": "Laguna de Huacachina",
+          "evidence": "PDF MINCETUR, página 1: atractivo nombrado en el circuito; respaldo histórico, no certificación vigente."
+        },
+        {
+          "entity_type": "attraction",
+          "entity_id": "2799bb81-55af-4c24-b754-304696508ba4",
+          "code": "ATT024",
+          "name": "Plaza de Armas de Ica",
+          "evidence": "PDF MINCETUR, página 1: atractivo nombrado en el circuito; respaldo histórico, no certificación vigente."
+        },
+        {
+          "entity_type": "attraction",
+          "entity_id": "89f3b731-f035-4202-8982-f161940a4cf4",
+          "code": "ATT025",
+          "name": "Bodega Turística El Catador",
+          "evidence": "PDF MINCETUR, página 1: atractivo nombrado en el circuito; respaldo histórico, no certificación vigente."
+        },
+        {
+          "entity_type": "attraction",
+          "entity_id": "c16124e0-7f2e-4604-89fb-fd523a20aa26",
+          "code": "ATT028",
+          "name": "Playa Lagunillas",
+          "evidence": "PDF MINCETUR, página 1: atractivo nombrado en el circuito; respaldo histórico, no certificación vigente."
+        },
+        {
+          "entity_type": "attraction",
+          "entity_id": "08196853-8358-4c17-94e5-f3bd856dfe13",
+          "code": "ATT035",
+          "name": "Bodega Doña Juanita",
+          "evidence": "PDF MINCETUR, página 1: atractivo nombrado en el circuito; respaldo histórico, no certificación vigente."
+        },
+        {
+          "entity_type": "attraction",
+          "entity_id": "15cdbcfe-0f42-4784-b871-47e04543087e",
+          "code": "ATT036",
+          "name": "Bodega La Caravedo",
+          "evidence": "PDF MINCETUR, página 1: atractivo nombrado en el circuito; respaldo histórico, no certificación vigente."
+        },
+        {
+          "entity_type": "attraction",
+          "entity_id": "ad890d9d-3231-4f8e-a427-d38e85d06cbb",
+          "code": "ATT037",
+          "name": "Bodega Tacama",
+          "evidence": "PDF MINCETUR, página 1: atractivo nombrado en el circuito; respaldo histórico, no certificación vigente."
+        }
+      ]
+    },
+    {
+      "id": "45b91f5d-a03c-4b8b-9dcf-64ad5f2c8298",
+      "name": "Tripadvisor - Paracas cafés",
+      "url": "https://www.tripadvisor.com/Restaurants-g445063-c8-Paracas_Ica_Region.html",
+      "links": [
+        {
+          "entity_type": "restaurant",
+          "entity_id": "8dc44bcd-0f67-4385-809c-051e7cc9a036",
+          "code": "BAR010",
+          "name": "Fruzion",
+          "evidence": "Directorio de cafés de Paracas: establecimiento nombrado explícitamente en el listado consultado; no acredita calidad ni vigencia."
+        },
+        {
+          "entity_type": "restaurant",
+          "entity_id": "65b3d1ca-ef86-4fe4-af69-c7babe0f2b63",
+          "code": "BAR002",
+          "name": "Jaku Coffee Paracas",
+          "evidence": "Directorio de cafés de Paracas: establecimiento nombrado explícitamente en el listado consultado; no acredita calidad ni vigencia."
+        },
+        {
+          "entity_type": "restaurant",
+          "entity_id": "4db2fd94-9e42-49da-80e3-cdf964789f95",
+          "code": "BAR012",
+          "name": "Gelato",
+          "evidence": "Directorio de cafés de Paracas: establecimiento nombrado explícitamente en el listado consultado; no acredita calidad ni vigencia."
+        },
+        {
+          "entity_type": "restaurant",
+          "entity_id": "ced9039d-a33e-4015-8722-e98785bb9927",
+          "code": "BAR004",
+          "name": "Coffee Bell",
+          "evidence": "Directorio de cafés de Paracas: establecimiento nombrado explícitamente en el listado consultado; no acredita calidad ni vigencia."
+        },
+        {
+          "entity_type": "restaurant",
+          "entity_id": "0506be31-05c1-45f3-baf3-b8cb79ee8eb8",
+          "code": "RES026",
+          "name": "Arena Cafe",
+          "evidence": "Directorio de cafés de Paracas: establecimiento nombrado explícitamente en el listado consultado; no acredita calidad ni vigencia."
+        },
+        {
+          "entity_type": "restaurant",
+          "entity_id": "3842cf2c-37f3-4b5c-9173-402d9098d939",
+          "code": "BAR013",
+          "name": "Panadería y cafeteria Colombia Perú",
+          "evidence": "Directorio de cafés de Paracas: establecimiento nombrado explícitamente en el listado consultado; no acredita calidad ni vigencia."
+        },
+        {
+          "entity_type": "restaurant",
+          "entity_id": "27c1ff60-9b30-46ca-bdb4-328f4700ab03",
+          "code": "BAR015",
+          "name": "Sweet Lucy’s",
+          "evidence": "Directorio de cafés de Paracas: establecimiento nombrado explícitamente en el listado consultado; no acredita calidad ni vigencia."
+        },
+        {
+          "entity_type": "restaurant",
+          "entity_id": "0f5ffb1f-76d0-471b-9c72-82e488057f9d",
+          "code": "RES083",
+          "name": "Marinera",
+          "evidence": "Directorio de cafés de Paracas: establecimiento nombrado explícitamente en el listado consultado; no acredita calidad ni vigencia."
+        },
+        {
+          "entity_type": "restaurant",
+          "entity_id": "dbe22ac7-9031-4151-81e1-ac53d1527ba0",
+          "code": "BAR014",
+          "name": "Triplec Desayunos",
+          "evidence": "Directorio de cafés de Paracas: establecimiento nombrado explícitamente en el listado consultado; no acredita calidad ni vigencia."
+        },
+        {
+          "entity_type": "restaurant",
+          "entity_id": "2952780a-6d24-4cc7-acdc-c7af6d420e0f",
+          "code": "BAR016",
+          "name": "La Parrilla de Nerly",
+          "evidence": "Directorio de cafés de Paracas: establecimiento nombrado explícitamente en el listado consultado; no acredita calidad ni vigencia."
+        },
+        {
+          "entity_type": "restaurant",
+          "entity_id": "8a18c740-5c89-478d-a4cd-10be6aa34b70",
+          "code": "BAR011",
+          "name": "Wayta Rapi Café Bar",
+          "evidence": "Directorio de cafés de Paracas: establecimiento nombrado explícitamente en el listado consultado; no acredita calidad ni vigencia."
+        },
+        {
+          "entity_type": "restaurant",
+          "entity_id": "b1cf83b4-34de-4c0e-aa80-1d3bb265c904",
+          "code": "RES016",
+          "name": "Milla Cero",
+          "evidence": "Directorio de cafés de Paracas: establecimiento nombrado explícitamente en el listado consultado; no acredita calidad ni vigencia."
+        },
+        {
+          "entity_type": "restaurant",
+          "entity_id": "e6c94b11-652b-4be2-980a-f6ca7091256a",
+          "code": "RES018",
+          "name": "Restaurant Juan Pablo en Paracas",
+          "evidence": "Directorio de cafés de Paracas: establecimiento nombrado explícitamente en el listado consultado; no acredita calidad ni vigencia."
+        },
+        {
+          "entity_type": "restaurant",
+          "entity_id": "a0a3d75a-6f98-48f7-baf7-706dcf83b7d2",
+          "code": "RES074",
+          "name": "Puerto Gloria Cefe",
+          "evidence": "Directorio de cafés de Paracas: establecimiento nombrado explícitamente en el listado consultado; no acredita calidad ni vigencia."
+        },
+        {
+          "entity_type": "restaurant",
+          "entity_id": "c3ea9ac0-79d9-42c5-8425-b245ac68b851",
+          "code": "BAR022",
+          "name": "Disfrutalo",
+          "evidence": "Directorio de cafés de Paracas: establecimiento nombrado explícitamente en el listado consultado; no acredita calidad ni vigencia."
+        },
+        {
+          "entity_type": "restaurant",
+          "entity_id": "54957271-7ee7-4b9b-88b6-3a03fb332147",
+          "code": "RES078",
+          "name": "Sandwicher café",
+          "evidence": "Directorio de cafés de Paracas: establecimiento nombrado explícitamente en el listado consultado; no acredita calidad ni vigencia."
+        }
+      ]
+    },
+    {
+      "id": "9a06b75d-d872-4020-bdd1-3dd9b1fb208c",
+      "name": "Booking - Paracas lodging market",
+      "url": "https://www.booking.com/reviews/pe/city/bbs-inns/paracas.html",
+      "links": [
+        {
+          "entity_type": "hotel",
+          "entity_id": "5067d3f3-1ce0-4a72-8fd5-0c4037792840",
+          "code": "HOT017",
+          "name": "SG Paracas Hostel",
+          "evidence": "Booking: alojamiento nombrado explícitamente en reseñas recientes o ranking B&B de Paracas; no acredita categoría hotelera ni vigencia."
+        },
+        {
+          "entity_type": "hotel",
+          "entity_id": "ee6b4637-87fc-4c6a-972b-f27fb74d4ece",
+          "code": "HOT019",
+          "name": "Betania Paracas",
+          "evidence": "Booking: alojamiento nombrado explícitamente en reseñas recientes o ranking B&B de Paracas; no acredita categoría hotelera ni vigencia."
+        },
+        {
+          "entity_type": "hotel",
+          "entity_id": "9fa232cf-d31c-485b-8de9-efa8477ac199",
+          "code": "HOT030",
+          "name": "Hospedaje Mary",
+          "evidence": "Booking: alojamiento nombrado explícitamente en reseñas recientes o ranking B&B de Paracas; no acredita categoría hotelera ni vigencia."
+        },
+        {
+          "entity_type": "hotel",
+          "entity_id": "f456eab7-19e5-4f11-b5e5-ea594451a2f0",
+          "code": "HOT011",
+          "name": "Paracas Guest House",
+          "evidence": "Booking: alojamiento nombrado explícitamente en reseñas recientes o ranking B&B de Paracas; no acredita categoría hotelera ni vigencia."
+        },
+        {
+          "entity_type": "hotel",
+          "entity_id": "6fc7b473-9e92-4fb0-930f-64b0a766e74f",
+          "code": "HOT042",
+          "name": "Coco Lodge Paracas",
+          "evidence": "Booking: alojamiento nombrado explícitamente en reseñas recientes o ranking B&B de Paracas; no acredita categoría hotelera ni vigencia."
+        },
+        {
+          "entity_type": "hotel",
+          "entity_id": "98c3b01a-0875-48d3-9dfb-f47eeb6b5b3f",
+          "code": "HOT041",
+          "name": "Paracas Desert Lodge&Tours",
+          "evidence": "Booking: alojamiento nombrado explícitamente en reseñas recientes o ranking B&B de Paracas; no acredita categoría hotelera ni vigencia."
+        },
+        {
+          "entity_type": "hotel",
+          "entity_id": "3fdfcd1d-1a3f-405b-8782-05a82e1246af",
+          "code": "HOT063",
+          "name": "Casa Mahulu",
+          "evidence": "Booking: alojamiento nombrado explícitamente en reseñas recientes o ranking B&B de Paracas; no acredita categoría hotelera ni vigencia."
+        },
+        {
+          "entity_type": "hotel",
+          "entity_id": "9207a430-dc38-4fec-a6d1-b4264ae98dfb",
+          "code": "HOT026",
+          "name": "El Capricho Paracas",
+          "evidence": "Booking: alojamiento nombrado explícitamente en reseñas recientes o ranking B&B de Paracas; no acredita categoría hotelera ni vigencia."
+        },
+        {
+          "entity_type": "hotel",
+          "entity_id": "73cd07d7-59cc-4fb3-9291-10647c1d50d3",
+          "code": "HOT043",
+          "name": "El Capricho II Paracas",
+          "evidence": "Booking: alojamiento nombrado explícitamente en reseñas recientes o ranking B&B de Paracas; no acredita categoría hotelera ni vigencia."
+        },
+        {
+          "entity_type": "hotel",
+          "entity_id": "951a938d-ce6a-4bd7-af8c-55a1c3463a4b",
+          "code": "HOT028",
+          "name": "Arena Hostal",
+          "evidence": "Booking: alojamiento nombrado explícitamente en reseñas recientes o ranking B&B de Paracas; no acredita categoría hotelera ni vigencia."
+        }
+      ]
+    },
+    {
+      "id": "5a765711-e873-42a4-aa5d-e9134b755514",
+      "name": "MINCETUR Safe Travels Ica",
+      "url": "https://consultasenlinea.mincetur.gob.pe/safetravels/destinos/DESTINOS_ICA_mayo.pdf",
+      "links": [
+        {
+          "entity_type": "hotel",
+          "entity_id": "66c39510-9e54-412e-9027-d7c2e0128558",
+          "code": "HOT060",
+          "name": "Refugio del Pirata",
+          "evidence": "PDF MINCETUR, página 5: prestador nombrado en el bloque Paracas; evidencia histórica, no certificación vigente."
+        },
+        {
+          "entity_type": "restaurant",
+          "entity_id": "ee8a9117-9d8f-407c-adf1-b210e4615f18",
+          "code": "RES009",
+          "name": "La Muña",
+          "evidence": "PDF MINCETUR, página 5: prestador nombrado en el bloque Paracas; evidencia histórica, no certificación vigente."
+        },
+        {
+          "entity_type": "restaurant",
+          "entity_id": "f5310298-dccd-4e67-b419-9fcb9319f29c",
+          "code": "RES019",
+          "name": "Sol de Paracas",
+          "evidence": "PDF MINCETUR, página 5: prestador nombrado en el bloque Paracas; evidencia histórica, no certificación vigente."
+        },
+        {
+          "entity_type": "restaurant",
+          "entity_id": "8dc44bcd-0f67-4385-809c-051e7cc9a036",
+          "code": "BAR010",
+          "name": "Fruzion",
+          "evidence": "PDF MINCETUR, página 5: prestador nombrado en el bloque Paracas; evidencia histórica, no certificación vigente."
+        },
+        {
+          "entity_type": "restaurant",
+          "entity_id": "d8d4ed17-aff8-4155-88cd-6f7ff1ea45a4",
+          "code": "RES027",
+          "name": "Karamba Restobar",
+          "evidence": "PDF MINCETUR, página 5: prestador nombrado en el bloque Paracas; evidencia histórica, no certificación vigente."
+        }
+      ]
+    },
+    {
+      "id": "bac6409e-e75f-403a-ad56-4ae5124cffd8",
+      "name": "Paracas restaurant inventory",
+      "url": "https://www.tripadvisor.es/Restaurants-g445063-Paracas_Ica_Region.html",
+      "links": [
+        {
+          "entity_type": "restaurant",
+          "entity_id": "df04f9be-3a83-4c94-853f-713707a45814",
+          "code": "RES012",
+          "name": "Restaurant Nautilus",
+          "evidence": "Tripadvisor español: restaurante nombrado explícitamente en el listado de Paracas consultado; no acredita calidad ni vigencia."
+        },
+        {
+          "entity_type": "restaurant",
+          "entity_id": "cc591f7b-2e2a-4411-bb8b-4755767b04ad",
+          "code": "RES022",
+          "name": "El Arizal de Abraham",
+          "evidence": "Tripadvisor español: restaurante nombrado explícitamente en el listado de Paracas consultado; no acredita calidad ni vigencia."
+        },
+        {
+          "entity_type": "restaurant",
+          "entity_id": "3b44e307-e16f-4ff7-9401-d05d3da2af43",
+          "code": "RES020",
+          "name": "La Puntilla",
+          "evidence": "Tripadvisor español: restaurante nombrado explícitamente en el listado de Paracas consultado; no acredita calidad ni vigencia."
+        },
+        {
+          "entity_type": "restaurant",
+          "entity_id": "c03ab707-88ed-4a2f-8402-193ae0f502c6",
+          "code": "RES003",
+          "name": "Pukasoncco arte y restaurante",
+          "evidence": "Tripadvisor español: restaurante nombrado explícitamente en el listado de Paracas consultado; no acredita calidad ni vigencia."
+        },
+        {
+          "entity_type": "restaurant",
+          "entity_id": "f5310298-dccd-4e67-b419-9fcb9319f29c",
+          "code": "RES019",
+          "name": "Sol de Paracas",
+          "evidence": "Tripadvisor español: restaurante nombrado explícitamente en el listado de Paracas consultado; no acredita calidad ni vigencia."
+        },
+        {
+          "entity_type": "restaurant",
+          "entity_id": "d8d4ed17-aff8-4155-88cd-6f7ff1ea45a4",
+          "code": "RES027",
+          "name": "Karamba Restobar",
+          "evidence": "Tripadvisor español: restaurante nombrado explícitamente en el listado de Paracas consultado; no acredita calidad ni vigencia."
+        },
+        {
+          "entity_type": "restaurant",
+          "entity_id": "b1cf83b4-34de-4c0e-aa80-1d3bb265c904",
+          "code": "RES016",
+          "name": "Milla Cero",
+          "evidence": "Tripadvisor español: restaurante nombrado explícitamente en el listado de Paracas consultado; no acredita calidad ni vigencia."
+        }
+      ]
+    },
+    {
+      "id": "77292bf6-3f63-4124-b985-adbf7c2c4703",
+      "name": "Tripadvisor - Paracas restaurants",
+      "url": "https://www.tripadvisor.com/Restaurants-g445063-Paracas_Ica_Region.html",
+      "links": [
+        {
+          "entity_type": "restaurant",
+          "entity_id": "df04f9be-3a83-4c94-853f-713707a45814",
+          "code": "RES012",
+          "name": "Restaurant Nautilus",
+          "evidence": "Tripadvisor inglés: restaurante nombrado explícitamente en el listado de Paracas consultado; no acredita calidad ni vigencia."
+        },
+        {
+          "entity_type": "restaurant",
+          "entity_id": "f5310298-dccd-4e67-b419-9fcb9319f29c",
+          "code": "RES019",
+          "name": "Sol de Paracas",
+          "evidence": "Tripadvisor inglés: restaurante nombrado explícitamente en el listado de Paracas consultado; no acredita calidad ni vigencia."
+        },
+        {
+          "entity_type": "restaurant",
+          "entity_id": "cc591f7b-2e2a-4411-bb8b-4755767b04ad",
+          "code": "RES022",
+          "name": "El Arizal de Abraham",
+          "evidence": "Tripadvisor inglés: restaurante nombrado explícitamente en el listado de Paracas consultado; no acredita calidad ni vigencia."
+        },
+        {
+          "entity_type": "restaurant",
+          "entity_id": "3b44e307-e16f-4ff7-9401-d05d3da2af43",
+          "code": "RES020",
+          "name": "La Puntilla",
+          "evidence": "Tripadvisor inglés: restaurante nombrado explícitamente en el listado de Paracas consultado; no acredita calidad ni vigencia."
+        },
+        {
+          "entity_type": "restaurant",
+          "entity_id": "c03ab707-88ed-4a2f-8402-193ae0f502c6",
+          "code": "RES003",
+          "name": "Pukasoncco arte y restaurante",
+          "evidence": "Tripadvisor inglés: restaurante nombrado explícitamente en el listado de Paracas consultado; no acredita calidad ni vigencia."
+        }
+      ]
+    }
+  ]
+}

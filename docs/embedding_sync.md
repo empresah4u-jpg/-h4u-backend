@@ -98,3 +98,68 @@ Validación de esta implementación:
 - Warning conocido: urllib3/LibreSSL.
 - py_compile y git diff --check: OK.
 - --apply NO ejecutado sobre h4u; no migraciones creadas/aplicadas.
+
+## Reauditoría del checkpoint (2026-09-26)
+
+El diagnóstico 271/253 anterior es histórico, no el estado actual. La consulta de
+activos es `load_entities()` en generate_embeddings: cuatro SELECT sobre hotels,
+restaurants, tours y attractions, todos con `WHERE status = 'active'`. Se cuenta la
+lista combinada. existing_embeddings cuenta todas las filas de entity_embeddings
+sin filtro de estado. Ninguna consulta depende de data_sources/entity_sources.
+
+Estado actual, transacción REPEATABLE READ READ ONLY: 276 activos y 276 embeddings;
+hotel=91, restaurant=98, tour=50, attraction=37. create=0, update=0, unchanged=276,
+orphan=0, unsupported=0. Sin duplicados lógicos ni múltiples hashes por entidad.
+Los 276 contenidos y SHA-256 coinciden con el renderizador canónico; destino,
+modelo, dimensión 384, finitud y norma cumplen el contrato. No se regeneraron
+vectores para esta auditoría: los metadatos correctos no demuestran por sí solos
+qué ejecutable produjo cada vector.
+
+Las fechas almacenadas permiten reconstruir el cambio numérico (UTC):
+
+- 2026-09-26 16:57:02.645184: 18 nuevas filas (12 hotel, 4 restaurant,
+  2 attraction) y 8 filas antiguas restaurant actualizadas.
+- 2026-09-26 17:24:09.947565: creación de ATT033–ATT037, todas activas:
+  Playa Carhuas, Playa Mendieta, Bodega Doña Juanita, Bodega La Caravedo y Bodega Tacama.
+- 2026-09-26 17:25:57.104980: creación de los 5 embeddings adicionales attraction.
+- Permanecen 245 embeddings con created_at=2026-08-22 y updated_at=2026-09-19.
+
+Así, 253+18+5=276 embeddings y 271+5=276 entidades activas; las 8
+actualizaciones explican la desaparición del UPDATE anterior. Son fechas de filas,
+no un historial inmutable de ejecución: no prueban autor/comando ni excluyen otras
+operaciones intermedias. El patrón es compatible con sincronización incremental,
+pero no permite atribuirlo inequívocamente a sync_embeddings --apply.
+
+Antes de reconcile_sources ya se midieron 276 embeddings; su ensayo y aplicación
+compararon fingerprints completos y no cambiaron ninguno. No hay triggers de
+usuario ni reglas sobre entity_sources que modifiquen embeddings. La conciliación
+no causa esta diferencia. La consulta actual identifica h4u, OID 16384,
+servidor 172.19.0.2:5432, system_identifier 7676591420387823655. Las ejecuciones
+anteriores se documentaron como h4u y comparten configuración/código, pero no se
+registró entonces esa identidad física. No puede certificarse retrospectivamente
+que fuera exactamente la misma instancia o que nunca se restaurara.
+log_statement=none, logging_collector=off y track_commit_timestamp=off en la
+inspección actual; no se inspeccionaron historiales de shell ni secretos.
+
+Recomendación UNIQUE(entity_type,entity_id): favorable para la tabla de embeddings
+vigentes, previa migración separada autorizada y revalidación de duplicados.
+Sync actualiza una fila por entidad; generate_embeddings elimina/reinserta por par;
+rebuild actualiza por id. Ninguno necesita versiones simultáneas. Semantic search
+no selecciona una versión vigente: varias filas pueden ocupar candidatos antes de
+su deduplicación Python. El UNIQUE actual con content_hash permite versiones sin
+un contrato funcional para seleccionarlas. Si se necesita historial/múltiples
+modelos, diseñarlo explícitamente aparte antes de imponer una clave distinta.
+Los tests de duplicados usan TEMP sin índices y pueden conservar sus fixtures;
+una futura migración necesita tests propios de restricción real. No se aplicó DDL.
+
+Revisión operacional: sync tiene inspección READ ONLY por defecto, --apply
+explícito, transacción única, rollback por excepción y bloqueos; no DELETE.
+El resumen JSON es su salida operativa, sin registro persistente de ejecuciones ni
+identidad de BD. Los errores salen con código no cero/traceback; no se ocultan.
+Carga/inferencia mantienen locks y no tienen límite global de ejecución; riesgo de
+espera para otros escritores. generate_embeddings es un script legado distinto,
+con DELETE/reinserción y sin esa misma protección; no fue ejecutado.
+
+Validación de reauditoría: 34 pruebas específicas aprobadas en 2.71s;
+435 pruebas completas aprobadas, 1 warning conocido, en 109.03s. Compilación y
+`git diff --check` correctos. Sólo documentación modificada; no --apply ni migración.
