@@ -41,3 +41,6 @@ data/samples/*
 .coverage
 htmlcov/
 docs/CURRENT_STATE.local.md
+
+# Local demo administrative secrets and protected backups
+.demo-private/

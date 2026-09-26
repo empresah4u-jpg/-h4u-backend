@@ -35,6 +35,8 @@ class MessagingProvider(Protocol):
 
 class MetaProvider:
     def __init__(self, settings, client=None):
+        if os.getenv("H4U_DEMO_MODE")=="true" or os.getenv("DB_NAME")=="h4u_demo":
+            raise ValueError("Meta is disabled for demo databases")
         if not (settings.access_token and re.fullmatch(r'[0-9]{1,40}',settings.account_id)
                 and re.fullmatch(r'v[0-9]+\.0',settings.api_version)):
             raise ValueError('whatsapp_configuration_missing')
@@ -42,6 +44,8 @@ class MetaProvider:
         self.client=client
 
     def _send(self, recipient, kind, content, correlation_id):
+        if os.getenv("H4U_DEMO_MODE")=="true" or os.getenv("DB_NAME")=="h4u_demo":
+            raise SendError("demo_external_send_forbidden")
         payload={'messaging_product':'whatsapp','to':recipient,'type':kind,kind:content,
                  'biz_opaque_callback_data':correlation_id}
         url=f'https://graph.facebook.com/{self.settings.api_version}/{self.settings.account_id}/messages'

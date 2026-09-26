@@ -1,10 +1,10 @@
-from datetime import time
+from datetime import datetime, time
 from decimal import Decimal
 from typing import Optional
 from uuid import UUID
 
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.db import get_connection
 from app.auth import authorize, recheck_owner, prelock_partner
@@ -39,6 +39,42 @@ class PartnerResponseCreate(BaseModel):
 
 @router.post("", status_code=200, dependencies=[authorize("response.create")])
 def respond_to_request(payload: PartnerResponseCreate):
+    return _respond_to_request(payload)
+
+
+class CounterOfferAcceptance(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    expected_version: datetime
+
+    @field_validator('expected_version')
+    @classmethod
+    def timezone_required(cls, value):
+        if value.tzinfo is None:
+            raise ValueError('La versión debe incluir zona horaria.')
+        return value
+
+
+@router.get('/{request_partner_id}/counter-offer', dependencies=[authorize('offer.accept')])
+def read_counter_offer(request_partner_id: UUID):
+    with get_connection() as conn, conn.cursor() as cur:
+        recheck_owner(cur, 'candidate', request_partner_id)
+        cur.execute("""SELECT proposed_price,proposed_currency,proposed_time,partner_message,updated_at
+            FROM request_partners WHERE id=%s AND status='counter_offered'""",(request_partner_id,))
+        row=cur.fetchone()
+        if not row:
+            raise HTTPException(409,'No hay una contraoferta disponible.')
+        if row[0] is None or row[1] is None:
+            raise HTTPException(409,'La aceptación del turista requiere precio y moneda explícitos.')
+        return dict(zip(('price','currency','time','message','version'),row))
+
+
+@router.post('/{request_partner_id}/accept-counter-offer', dependencies=[authorize('offer.accept')])
+def accept_counter_offer(request_partner_id: UUID, payload: CounterOfferAcceptance):
+    return _respond_to_request(PartnerResponseCreate(request_partner_id=request_partner_id,action='accept'),
+                               expected_offer=payload.expected_version)
+
+
+def _respond_to_request(payload: PartnerResponseCreate, *, expected_offer=None):
 
     action = payload.action.lower().strip()
 
@@ -64,6 +100,10 @@ def respond_to_request(payload: PartnerResponseCreate):
 
     with get_connection() as conn:
         with conn.cursor() as cur:
+            if expected_offer is not None:
+                # Keep partner -> request lock order also for tourist acceptance.
+                cur.execute("""SELECT p.id FROM partners p JOIN request_partners rp ON rp.partner_id=p.id
+                    WHERE rp.id=%s FOR SHARE OF p""", (payload.request_partner_id,))
             prelock_partner(cur, "candidate", payload.request_partner_id)
 
             # Obtener candidatura.
@@ -102,13 +142,17 @@ def respond_to_request(payload: PartnerResponseCreate):
             request = cur.fetchone()
             if not request or request[0] not in {"searching", "offers_received"} or request[1] is not None:
                 raise HTTPException(409, "La solicitud ya no admite respuestas.")
-            cur.execute("SELECT status FROM request_partners WHERE id = %s FOR UPDATE", (payload.request_partner_id,))
+            cur.execute("SELECT status,proposed_price,proposed_currency,updated_at FROM request_partners WHERE id = %s FOR UPDATE", (payload.request_partner_id,))
             current = cur.fetchone()
             if not current:
                 raise HTTPException(404, "Candidatura no encontrada.")
             recheck_owner(cur, "candidate", payload.request_partner_id)
             if action != 'reject':
                 require_bookable_candidate(cur, payload.request_partner_id)
+            if expected_offer is not None:
+                if (current[0] != 'counter_offered' or current[1] is None or current[2] is None
+                        or current[3] != expected_offer):
+                    raise HTTPException(409,'La contraoferta cambió o ya no admite aceptación.')
             candidate_status = current[0]
             request_code = candidate[4]
             partner_code = candidate[5]

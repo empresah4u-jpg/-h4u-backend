@@ -1,0 +1,28 @@
+services:
+  postgres-demo:
+    image: pgvector/pgvector:pg16
+    container_name: h4u-demo-postgres
+    labels:
+      com.h4u.demo: isolated
+    environment:
+      POSTGRES_DB: postgres
+      POSTGRES_USER: h4u_demo_setup
+      POSTGRES_PASSWORD_FILE: /run/secrets/demo_admin_password
+      POSTGRES_HOST_AUTH_METHOD: scram-sha-256
+    ports:
+      - "127.0.0.1:55432:5432"
+    volumes:
+      - h4u_demo_pgdata:/var/lib/postgresql/data
+    secrets:
+      - demo_admin_password
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U h4u_demo_setup -d postgres"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+secrets:
+  demo_admin_password:
+    file: ./.demo-private/admin_password
+volumes:
+  h4u_demo_pgdata:
+    name: h4u_demo_pgdata_isolated

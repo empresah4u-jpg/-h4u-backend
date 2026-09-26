@@ -109,3 +109,12 @@ Aplicación explícita/checksum: `.venv/bin/python -m scripts.apply_whatsapp_mes
 Auditoría de conteos: `.venv/bin/python -m scripts.audit_whatsapp`.
 007 ya aplicada tras dry-run y rollback verificado: NO editar 001–007; próxima 008+.
 Ver `docs/whatsapp_architecture.md` para operación del worker, privacidad y Meta pendiente.
+
+## Base DEMO persistente y aislada
+
+`python -m scripts.setup_demo` prepara h4u_demo en el contenedor independiente
+h4u-demo-postgres. Preserva la copia legacy y traslada solo datos ficticios.
+Runtime usa h4u_demo_app sin privilegios administrativos; setup usa h4u_demo_setup.
+No modifica h4u ni migraciones 001–007. Bootstrap y ejemplo runtime en db/demo/.
+Reconstrucción explícita con backup, marcador y confirmación; por defecto no destructivo.
+Uso, guardas y límites: [Modo Demo](../docs/demo_mode.md).
