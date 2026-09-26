@@ -168,3 +168,16 @@ de exposición pública, acceso de usuarios no confiables al host/Docker ni cone
 Las reglas trust del servidor original no se alteraron; el runtime demo no utiliza sus
 credenciales. La copia legacy permanece conservada en ese servidor.
 No commit ni push. No se repitió la suite después de cambios exclusivamente documentales.
+
+
+## Endurecimiento comercial 008
+
+`python -m scripts.run_demo --scenario accept --exercise-lifecycle` usa la misma
+lógica comercial para cancelar después del settlement, con una política ficticia
+explícita, repetir idempotentemente y confirmar un refund mediante proveedor fake.
+La devolución genera crédito de comisión sin alterar el settlement pagado.
+Los nuevos mensajes se entregan con FakeProvider. No se reutilizan identidades reales.
+
+La actualización incremental de esquema usa `upgrade_demo_schema` y la misma 008
+que h4u, con dry-run, rollback y checksums. Los tests concurrentes conservan fixtures
+ficticios RACE en h4u_demo; no se borran datos para limpiar resultados.

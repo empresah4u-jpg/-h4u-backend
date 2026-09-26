@@ -116,6 +116,8 @@ def create_passengers(
                 )
 
             recheck_owner(cur, "reservation", reservation_code)
+            from app.services.commercial_lifecycle import require_unexpired
+            require_unexpired(cur, 'reservations', reservation[0])
             reservation_id = reservation[0]
             service_request_id = reservation[1]
             expected_passengers = reservation[2]

@@ -2,10 +2,11 @@ from typing import Optional
 from decimal import Decimal
 
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app.db import get_connection
 from app.auth import authorize, recheck_owner, prelock_partner
+from app.services.commercial_lifecycle import require_unexpired, slot_for_reservation
 from app.services.commercial_eligibility import require_bookable_candidate
 
 
@@ -20,7 +21,8 @@ class ReservationCreate(BaseModel):
 
 
 class ReservationCancel(BaseModel):
-    reason: str
+    reason: str = Field(min_length=1, max_length=1000)
+    idempotency_key: Optional[str] = Field(default=None, min_length=1, max_length=200)
 
 
 @router.post("", status_code=201, dependencies=[authorize("reservation.create")])
@@ -28,6 +30,10 @@ def create_reservation(payload: ReservationCreate):
 
     with get_connection() as conn:
         with conn.cursor() as cur:
+            cur.execute("SELECT assigned_partner_id FROM service_requests WHERE code=%s", (payload.service_request_code,))
+            owner = cur.fetchone()
+            if owner and owner[0]:
+                cur.execute("SELECT id FROM partners WHERE id=%s FOR UPDATE", (owner[0],))
             prelock_partner(cur, "request", payload.service_request_code)
 
             # 1. Bloquear la solicitud durante la creación.
@@ -59,6 +65,7 @@ def create_reservation(payload: ReservationCreate):
                 )
 
             recheck_owner(cur, "request", payload.service_request_code)
+            require_unexpired(cur, "service_requests", request[0])
             service_request_id = request[0]
             request_code = request[1]
             request_status = request[2]
@@ -221,6 +228,8 @@ def create_reservation(payload: ReservationCreate):
                 else preferred_time
             )
 
+            slot_id = slot_for_reservation(cur, product_id, assigned_partner_id, service_date, service_time, passenger_count)
+
             # 7. Determinar precio.
             #
             # Si existe proposed_price, se considera precio total
@@ -295,7 +304,7 @@ def create_reservation(payload: ReservationCreate):
                     passenger_count,
                     agreed_price,
                     currency,
-                    status
+                    status, slot_id
                 )
                 VALUES (
                     %s,
@@ -309,7 +318,7 @@ def create_reservation(payload: ReservationCreate):
                     %s,
                     %s,
                     %s,
-                    'awaiting_passenger_data'
+                    'awaiting_passenger_data', %s
                 )
                 RETURNING
                     id,
@@ -329,6 +338,7 @@ def create_reservation(payload: ReservationCreate):
                     passenger_count,
                     agreed_price,
                     currency,
+                    slot_id,
                 ),
             )
 
@@ -358,183 +368,11 @@ def cancel_reservation(
     payload: ReservationCancel,
 ):
 
-    cancellation_reason = payload.reason.strip()
-
-    if not cancellation_reason:
-        raise HTTPException(
-            status_code=400,
-            detail="Debe indicar el motivo de cancelación.",
-        )
-
+    from app.services.commercial_lifecycle import cancel_reservation as cancel
+    # Legacy callers receive a stable operation key, never a public bypass of policy.
     with get_connection() as conn:
         with conn.cursor() as cur:
-            prelock_partner(cur, "reservation", reservation_code)
-
-            # 1. Bloquear la reserva para evitar
-            # cancelaciones concurrentes.
-            cur.execute(
-                """
-                SELECT
-                    id,
-                    code,
-                    status,
-                    cancelled_at,
-                    cancellation_reason
-                FROM reservations
-                WHERE code = %s
-                FOR UPDATE
-                """,
-                (reservation_code,),
-            )
-
-            reservation = cur.fetchone()
-
-            if not reservation:
-                raise HTTPException(
-                    status_code=404,
-                    detail="Reserva no encontrada.",
-                )
-
-            recheck_owner(cur, "reservation", reservation_code)
-            reservation_id = reservation[0]
-            current_status = reservation[2]
-
-            # 2. Evitar una segunda cancelación.
-            if current_status == "cancelled":
-                raise HTTPException(
-                    status_code=409,
-                    detail="La reserva ya está cancelada.",
-                )
-
-            # 3. Estados finales que no admiten cancelación.
-            if current_status in {
-                "completed",
-                "no_show",
-            }:
-                raise HTTPException(
-                    status_code=409,
-                    detail=(
-                        f"Una reserva en estado "
-                        f"{current_status} no puede cancelarse."
-                    ),
-                )
-
-            # 4. Solo estos estados pueden cancelarse.
-            cancellable_statuses = {
-                "pending",
-                "awaiting_passenger_data",
-                "payment_pending",
-                "confirmed",
-                "ready",
-            }
-
-            if current_status not in cancellable_statuses:
-                raise HTTPException(
-                    status_code=409,
-                    detail=(
-                        "La reserva no se encuentra en un "
-                        "estado que permita cancelación."
-                    ),
-                )
-
-            # 5. Si existe dinero ya cobrado o un pago
-            # en disputa, no cancelar directamente.
-            # Debe resolverse mediante el flujo financiero
-            # correspondiente.
-            cur.execute(
-                """
-                SELECT
-                    code,
-                    status
-                FROM payments
-                WHERE reservation_id = %s
-                  AND status IN (
-                      'paid',
-                      'disputed',
-                      'partially_refunded'
-                  )
-                LIMIT 1
-                FOR UPDATE
-                """,
-                (reservation_id,),
-            )
-
-            protected_payment = cur.fetchone()
-
-            if protected_payment:
-                raise HTTPException(
-                    status_code=409,
-                    detail=(
-                        "La reserva tiene un pago que requiere "
-                        "revisión o reembolso antes de cancelarse."
-                    ),
-                )
-
-            # 6. Cancelar pagos que todavía no han sido
-            # completados.
-            #
-            # Esto evita que un pago pendiente continúe
-            # activo después de cancelar la reserva.
-            cur.execute(
-                """
-                UPDATE payments
-                SET
-                    status = 'cancelled',
-                    updated_at = now()
-                WHERE reservation_id = %s
-                  AND status IN (
-                      'pending',
-                      'reported',
-                      'waiting_verification'
-                  )
-                """,
-                (reservation_id,),
-            )
-
-            cancelled_payments = cur.rowcount
-
-            # 7. Cancelar la reserva conservando
-            # trazabilidad.
-            cur.execute(
-                """
-                UPDATE reservations
-                SET
-                    status = 'cancelled',
-                    cancelled_at = now(),
-                    cancellation_reason = %s,
-                    updated_at = now()
-                WHERE id = %s
-                  AND status = %s
-                RETURNING
-                    code,
-                    status,
-                    cancelled_at,
-                    cancellation_reason
-                """,
-                (
-                    cancellation_reason,
-                    reservation_id,
-                    current_status,
-                ),
-            )
-
-            cancelled = cur.fetchone()
-
-            if not cancelled:
-                raise HTTPException(
-                    status_code=409,
-                    detail=(
-                        "No fue posible cancelar la reserva."
-                    ),
-                )
-
+            result = cancel(cur, reservation_code, payload.reason,
+                            payload.idempotency_key or 'legacy-cancel')
         conn.commit()
-
-    return {
-        "reservation_code": cancelled[0],
-        "previous_status": current_status,
-        "status": cancelled[1],
-        "cancelled_at": cancelled[2],
-        "cancellation_reason": cancelled[3],
-        "cancelled_payments": cancelled_payments,
-    }
+    return result

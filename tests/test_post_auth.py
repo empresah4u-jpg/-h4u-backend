@@ -126,7 +126,8 @@ def test_owner_cannot_confirm_invalid_payment_state(identity_case, state):
         ps.create_passengers(res['code'], ps.PassengersCreate(passengers=[passenger()]))
         payment = pay.create_payment(pay.PaymentCreate(reservation_code=res['code'], payment_method='cash', received_by='partner'))
         from app.routers.reservations import cancel_reservation, ReservationCancel
-        cancel_reservation(res['code'], ReservationCancel(reason='test'))
+        from tests.test_commercial import approved_cancellation
+        approved_cancellation(t['flow'],res,reason='test')
     assert t['client'].post('/payments/'+payment['code']+'/confirm-partner', headers=bearer(t)).status_code == 409
 
 

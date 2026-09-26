@@ -137,9 +137,13 @@ def _respond_to_request(payload: PartnerResponseCreate, *, expected_offer=None):
 
             service_request_id = candidate[1]
             partner_id = candidate[2]
+            cur.execute("SELECT id FROM partners WHERE id=%s FOR SHARE", (partner_id,))
             # Serializar cualquier respuesta, no solo la aceptación.
             cur.execute("SELECT status, assigned_partner_id FROM service_requests WHERE id = %s FOR UPDATE", (service_request_id,))
             request = cur.fetchone()
+            from app.services.commercial_lifecycle import require_unexpired
+            require_unexpired(cur, 'service_requests', service_request_id)
+            require_unexpired(cur, 'request_partners', payload.request_partner_id)
             if not request or request[0] not in {"searching", "offers_received"} or request[1] is not None:
                 raise HTTPException(409, "La solicitud ya no admite respuestas.")
             cur.execute("SELECT status,proposed_price,proposed_currency,updated_at FROM request_partners WHERE id = %s FOR UPDATE", (payload.request_partner_id,))

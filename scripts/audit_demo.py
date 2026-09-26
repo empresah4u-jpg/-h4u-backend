@@ -36,13 +36,14 @@ def main():
               WHERE s->>'step'='simulated_settlement' AND p.status='paid')''').fetchone()[0]
         checks['completed_finance_mismatch']=conn.execute("""WITH runs AS (
             SELECT scenario,
+             EXISTS(SELECT 1 FROM jsonb_array_elements(summary->'steps') s WHERE s->>'step'='lifecycle_refund') AS lifecycle_refund,
              (SELECT s->>'code' FROM jsonb_array_elements(summary->'steps') s WHERE s->>'step'='simulated_payment') payment_code,
              (SELECT s->>'code' FROM jsonb_array_elements(summary->'steps') s WHERE s->>'step'='simulated_settlement') settlement_code
             FROM demo_runs WHERE status='completed')
             SELECT count(*) FROM runs x LEFT JOIN payments p ON p.code=x.payment_code
             LEFT JOIN reservations r ON r.id=p.reservation_id LEFT JOIN commissions c ON c.payment_id=p.id
             LEFT JOIN partner_settlements s ON s.code=x.settlement_code
-            WHERE p.id IS NULL OR c.id IS NULL OR s.id IS NULL OR p.status<>'paid' OR s.status<>'paid'
+            WHERE p.id IS NULL OR c.id IS NULL OR s.id IS NULL OR p.status<>CASE WHEN x.lifecycle_refund THEN 'refunded' ELSE 'paid' END OR s.status<>'paid'
              OR p.amount<>CASE WHEN x.scenario='accept' THEN 100 ELSE 120 END
              OR c.commission_amount<>CASE WHEN x.scenario='accept' THEN 10 ELSE 12 END
              OR s.total_commission_amount<>c.commission_amount OR r.agreed_price<>p.amount

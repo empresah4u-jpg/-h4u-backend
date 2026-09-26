@@ -14,6 +14,7 @@ from app.identity import AuthConfigurationError, JWTSettings, JWTIdentityProvide
 from app.services.authentication import AuthenticationService
 from app.routers.authentication import router as authentication_router
 
+from app.routers.lifecycle import router as lifecycle_router
 from app.routers.whatsapp import router as whatsapp_router
 from app.routers.admin import router as admin_router
 from app.routers.partners import router as partners_router
@@ -139,6 +140,7 @@ app.add_middleware(
 )
 
 
+app.include_router(lifecycle_router)
 app.include_router(authentication_router)
 app.include_router(partners_router)
 app.include_router(admin_router)

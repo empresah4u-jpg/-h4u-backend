@@ -118,3 +118,18 @@ Runtime usa h4u_demo_app sin privilegios administrativos; setup usa h4u_demo_set
 No modifica h4u ni migraciones 001–007. Bootstrap y ejemplo runtime en db/demo/.
 Reconstrucción explícita con backup, marcador y confirmación; por defecto no destructivo.
 Uso, guardas y límites: [Modo Demo](../docs/demo_mode.md).
+
+
+## 008 — Ciclo comercial configurable
+
+`008_commercial_lifecycle.sql` añade políticas inmutables/asignaciones, casos de
+cancelación, comandos de refund pendientes, capacidad por salida, deadlines y eventos.
+No configura valores económicos ni modifica registros comerciales históricos.
+
+- Dry-run y rollback: `python -m scripts.apply_commercial_lifecycle`.
+- Aplicación explícita tras revisión: `python -m scripts.apply_commercial_lifecycle --apply`.
+- Mismo esquema demo, sin rebuild: `python -m scripts.apply_commercial_lifecycle --demo --apply`.
+- Auditor READ ONLY: `python -m scripts.audit_commercial_lifecycle` (añadir `--demo` para demo).
+
+No editar 008 después de aplicada. Nuevos cambios requieren 009+.
+Ver docs/commercial_lifecycle.md para políticas, jobs y el hallazgo histórico de pasajeros.

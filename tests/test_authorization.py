@@ -140,3 +140,28 @@ def test_ownership_rechecked_inside_business_transaction(ownership,monkeypatch):
     with as_actor(auth.Principal(subject='foreign',role='partner',partner_id=uuid4())) as client:
         assert client.post('/reservations/'+res['code']+'/cancel',json={'reason':'stale-owner'}).status_code==403
     assert ownership['conn'].execute('SELECT status FROM reservations WHERE code=%s',(res['code'],)).fetchone()[0]=='awaiting_passenger_data'
+
+
+@pytest.mark.parametrize('path', ['/admin/cancellation-policies','/admin/cancellation-policy-assignments','/admin/commercial-slots','/admin/refund-commands/00000000-0000-0000-0000-000000000001/confirm'])
+def test_operator_cannot_configure_economics(path):
+    with as_actor(auth.Principal(subject='test-operator',role='operator')) as client:
+        assert client.post(path,json={}).status_code==403
+
+
+def test_lifecycle_partner_ownership_is_rechecked(ownership):
+    res=reserve(ownership)
+    paths=['/reservations/'+res['code']+'/cancellation-requests',
+           '/reservations/'+res['code']+'/no-show',
+           '/reservations/'+res['code']+'/complete']
+    with as_actor(auth.Principal(subject='foreign',role='partner',partner_id=uuid4())) as client:
+        for path in paths:
+            assert client.post(path,json={'reason':'test','idempotency_key':'test'}).status_code==403
+    with as_actor(auth.Principal(subject=str(ownership['partner_user']),role='partner',partner_id=ownership['partner'])) as client:
+        result=client.post(paths[0],json={'reason':'test','idempotency_key':'test'})
+        assert result.status_code==200 and result.json()['status']=='requires_manual_review'
+
+
+def test_lifecycle_tourist_cannot_cancel_foreign_request(ownership):
+    req=request(ownership)
+    with as_actor(auth.Principal(subject='foreign',role='tourist',traveler_id=uuid4())) as client:
+        assert client.post('/service-requests/'+req['code']+'/cancel',json={'reason':'test'}).status_code==403

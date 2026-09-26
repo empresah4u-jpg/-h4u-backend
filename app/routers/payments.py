@@ -86,6 +86,8 @@ def create_payment(payload: PaymentCreate):
                 )
 
             recheck_owner(cur, "reservation", payload.reservation_code)
+            from app.services.commercial_lifecycle import require_unexpired
+            require_unexpired(cur, 'reservations', reservation[0])
             reservation_id = reservation[0]
             reservation_code = reservation[1]
             agreed_price = reservation[2]
@@ -263,6 +265,9 @@ def create_payment(payload: PaymentCreate):
 
 
 def _lock_cash_payment(cur, payment_code):
+    from app.services.finance import lock_payment_partner
+    from app.services.commercial_lifecycle import require_unexpired
+    lock_payment_partner(cur, payment_code)
     prelock_partner(cur, "payment", payment_code)
     # Todas las operaciones financieras bloquean primero reserva y luego pago.
     cur.execute("SELECT reservation_id FROM payments WHERE code = %s", (payment_code,))
@@ -273,6 +278,9 @@ def _lock_cash_payment(cur, payment_code):
     reservation = cur.fetchone()
     cur.execute("SELECT id FROM payments WHERE code = %s FOR UPDATE", (payment_code,))
     cur.fetchone()
+    require_unexpired(cur, 'reservations', row[0])
+    cur.execute('SELECT id FROM payments WHERE code=%s', (payment_code,))
+    require_unexpired(cur, 'payments', cur.fetchone()[0])
     recheck_owner(cur, "payment", payment_code)
     if not reservation or reservation[1] != "payment_pending":
         raise HTTPException(409, "La reserva no está pendiente de pago.")

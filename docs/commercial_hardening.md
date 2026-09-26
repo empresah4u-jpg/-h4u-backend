@@ -6,52 +6,18 @@ El usuario confirmó prorratear comisiones fijas y porcentuales sobre su importe
 histórico y compensar créditos solo hasta cero, arrastrando el sobrante. No se
 crean settlements negativos ni transferencias automáticas de H4U al partner.
 
-## Autorización e identidad
+## Autorización e identidad (actualizado)
 
-`app/auth.py` define Principal inmutable, IdentityProvider asíncrono, políticas
-por operación, dependencia FastAPI y comprobación de propiedad. No hay usuarios,
-contraseñas, claves nuevas, OAuth ni secretos compartidos de desarrollo.
+La identidad real JWT y sus sesiones están implementadas. app/auth.py revalida
+propiedad y membership efectiva en PostgreSQL. Operator y admin tienen capacidades
+distintas: refunds, comisiones, creación/verificación de settlements y configuración
+de políticas económicas son admin-only. No se aceptan identidades desde headers
+no verificados. Los servicios Python directos siguen siendo un límite de confianza.
 
-El punto de conexión es `app.state.identity_provider`, un adaptador de servidor
-con `async authenticate(token: str) -> Optional[Principal]`. Debe validar la
-credencial real, expiración, revocación y mapear identidad, rol y UUID internos
-contra una fuente confiable. Principal exige traveler_id para tourist y partner_id
-para partner. El adaptador devuelve None para una credencial inválida. Debe tratar
-los fallos de infraestructura como errores, nunca como una identidad por defecto.
-
-Sin adaptador o sin Bearer: 401. Rol o propietario incorrecto: 403. No se aceptan
-X-Role, X-Partner-Id, claims sin verificar ni identidades declaradas en el body.
-OpenAPI documenta HTTPBearer en todas las operaciones comerciales.
-
-| Operación | tourist | partner | operator/admin |
-|---|---|---|---|
-| Crear solicitud | sesión propia | No | Sí |
-| Simulación | No | No | Sí |
-| Responder candidatura | No | candidatura propia | Sí |
-| Crear/cancelar reserva | solicitud/reserva propia | asignación/reserva propia | Sí |
-| Registrar pasajeros / crear pago | reserva propia | reserva propia | Sí |
-| Confirmación del partner | No | pago de reserva propia | Sí |
-| Confirmación del turista | pago propio | No | Sí |
-| Refund / comisión / crear cierre | No | No | Sí |
-| Reportar pago de cierre | No | cierre propio | Sí |
-| Verificar cierre / procesar vencimientos | No | No | Sí |
-
-La propiedad se consulta en PostgreSQL, no se confía en UUID enviados por el
-cliente. Se vuelve a comprobar dentro de la transacción después de bloquear el
-recurso; un cambio entre la dependencia y la mutación no autoriza un recurso ajeno.
-Los catálogos y health permanecen públicos. Operator y admin tienen los mismos
-permisos comerciales por ahora; las políticas permiten separarlos después.
-
-Los handlers Python también actúan como servicios internos. Sus llamadas directas
-son un límite de confianza interno (no autentican un usuario HTTP). La auditoría
-las identifica como internal-service/system. Las llamadas HTTP registran el
-subject y rol verificados usando contexto aislado por solicitud. Los overrides
-son exclusivamente de tests, se restauran al terminar y no se instalan al arrancar.
-
-Pendiente para identidad real: elegir fuente de usuarios/sesiones, credenciales,
-expiración/revocación, alta y vinculación de partners/travelers, y recuperación de
-cuentas. Hasta conectar ese adaptador el backend **deniega todas las operaciones
-comerciales HTTP**; no hay modo público de compatibilidad.
+La matriz vigente de transiciones, políticas de cancelación, comandos de devolución,
+expiraciones y capacidades está en [commercial_lifecycle.md](commercial_lifecycle.md).
+Sin política configurada, cancelar genera un caso requires_manual_review; no se
+interpreta la falta de reglas como autorización para cancelar automáticamente.
 
 ## Modelo financiero
 

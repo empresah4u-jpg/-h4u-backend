@@ -76,6 +76,9 @@ STAFF = frozenset({'admin', 'operator'})
 ADMIN_ONLY = frozenset({'admin'})
 ALL = STAFF | {'tourist', 'partner'}
 POLICIES = {
+    'request.cancel': Policy(ALL, 'request', 'service_request_code'),
+    'reservation.outcome': Policy(STAFF | {'partner'}, 'reservation', 'reservation_code'),
+    'lifecycle.configure': Policy(ADMIN_ONLY),
     'request.create': Policy(STAFF | {'tourist'}, 'session', 'session_id'),
     'response.create': Policy(STAFF | {'partner'}, 'candidate', 'request_partner_id'),
     'offer.accept': Policy(frozenset({'tourist'}), 'candidate', 'request_partner_id'),

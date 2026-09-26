@@ -18,7 +18,7 @@ class DemoFailure(RuntimeError):
     pass
 
 
-def run(scenario='accept'):
+def run(scenario='accept', *, exercise_lifecycle=False):
     if scenario not in {'accept','counter_offer'}: raise ValueError('Unsupported demo scenario')
     run_id=uuid4(); suffix=run_id.hex[:12]
     code='DEMO-'+suffix
@@ -75,7 +75,7 @@ def run(scenario='accept'):
                     call('PUT','/admin/messaging/threads/'+str(tid)+'/binding','admin',{**target,'opted_in':True,'reason':'Consentimiento ficticio exclusivo DEMO'})
                 record('actors',traveler_id=str(traveler),partner_id=partner['id'])
                 req=call('POST','/service-requests','tourist',{'session_id':str(session),'product_id':str(product),
-                    'service_date':str(date.today()+timedelta(days=7)),'passenger_count':1,'adults_count':1,'minors_count':0},201)
+                    'service_date':str(date.today()+timedelta(days=7)),'preferred_time':'10:00:00','passenger_count':1,'adults_count':1,'minors_count':0},201)
                 record('request',code=req['code'])
                 candidate=req['candidates'][0]['request_partner_id']
                 if scenario=='counter_offer':
@@ -109,7 +109,27 @@ def run(scenario='accept'):
                 verified=call('POST','/settlements/'+settlement['code']+'/verify-payment','admin')
                 if not verified.get('paid') or Decimal(str(verified['total_commission_amount']))!=expected: raise DemoFailure('Settlement mismatch')
                 record('simulated_settlement',code=settlement['code'],amount=str(verified['total_commission_amount']),status=verified['status'])
-                templates={kind:{'name':'demo_'+kind.replace('.','_'),'language':'es'} for kind in ('request.created','partner.request','partner.response','reservation.confirmed','payment.confirmed','reservation.cancelled')}
+                if exercise_lifecycle:
+                    # Explicit fictional policy. Never seed economic defaults in h4u.
+                    policy=call('POST','/admin/cancellation-policies','admin',{
+                        'name':'DEMO full refund policy','policy':{'rules':[{
+                            'actors':['tourist'],'minimum_notice_seconds':0,'outcome':'cancel',
+                            'refund_type':'percentage','refund_value':'100'}]}},201)
+                    call('POST','/admin/cancellation-policy-assignments','admin',{
+                        'product_id':str(product),'partner_id':partner['id'],'policy_id':policy['id']})
+                    body={'reason':'Cancellation DEMO after settlement','idempotency_key':'demo:'+str(run_id)}
+                    cancelled=call('POST','/reservations/'+reservation['code']+'/cancellation-requests','tourist',body)
+                    if cancelled['status']!='cancelled' or cancelled['refund_execution']!='pending':
+                        raise DemoFailure('Configured cancellation did not enqueue refund')
+                    replay=call('POST','/reservations/'+reservation['code']+'/cancellation-requests','tourist',body)
+                    if replay!=cancelled: raise DemoFailure('Cancellation replay mismatch')
+                    from app.services.refund_execution import confirm
+                    with get_connection() as conn, conn.cursor() as cur:
+                        refunded=confirm(cur,UUID(cancelled['refund_command_id']),
+                                         'demo.refund.'+cancelled['refund_command_id'],'demo_fake')
+                    record('lifecycle_refund',amount=str(refunded['refund_amount']),
+                           command_id=cancelled['refund_command_id'],status=refunded['payment_status'])
+                templates={kind:{'name':'demo_'+kind.replace('.','_'),'language':'es'} for kind in ('request.created','partner.request','partner.response','reservation.confirmed','payment.confirmed','reservation.cancelled','refund.processed')}
                 # Materialize only this run's events; never consume older demo runs' pending facts.
                 with get_connection() as conn, conn.cursor() as cur:
                     cur.execute('SELECT id,kind,traveler_id,partner_id FROM notification_events WHERE service_request_id=%s AND processed_at IS NULL FOR UPDATE',(req['id'],))

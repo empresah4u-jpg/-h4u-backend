@@ -81,6 +81,28 @@ def configure_runtime(password):
         GRANT SELECT ON demo_environment,schema_migrations TO h4u_demo_app;''')
 
 
+def upgrade_demo_schema(expected):
+    """Only explicitly reviewed incremental migrations; same files as normal DB."""
+    check_marker()
+    current=json.loads(sql(TARGET,'SELECT json_object_agg(version,checksum) FROM schema_migrations'))
+    if any(expected.get(k)!=v for k,v in current.items()):
+        raise RuntimeError('Demo migration checksum mismatch')
+    missing=sorted(set(expected)-set(current))
+    if not missing: return
+    if missing!=['008_commercial_lifecycle.sql']:
+        raise RuntimeError('No reviewed incremental upgrade for this schema')
+    source=(ROOT/'db/migrations'/missing[0]).read_text()
+    registration="INSERT INTO schema_migrations(version,checksum) VALUES ('"+missing[0]+"','"+expected[missing[0]]+"');"
+    guard="SELECT pg_advisory_xact_lock(hashtext('h4u-schema-migrations')); SET LOCAL lock_timeout='5s'; SET LOCAL statement_timeout='30s';"
+    before=sql(TARGET,"SELECT to_regclass('public.commercial_slots') IS NULL")
+    sql(TARGET,'BEGIN;'+guard+source+registration+'ROLLBACK;')
+    if sql(TARGET,"SELECT to_regclass('public.commercial_slots') IS NULL")!=before:
+        raise RuntimeError('Demo migration rollback failed')
+    sql(TARGET,'BEGIN;'+guard+source+registration+"DO $$ BEGIN IF EXISTS(SELECT 1 FROM pg_roles WHERE rolname='h4u_demo_app') THEN GRANT SELECT,INSERT,UPDATE ON cancellation_policy_versions,commercial_product_settings,cancellation_policy_assignments,commercial_slots,cancellation_cases,refund_commands TO h4u_demo_app; END IF; END $$; COMMIT;")
+    if json.loads(sql(TARGET,'SELECT json_object_agg(version,checksum) FROM schema_migrations'))!=expected:
+        raise RuntimeError('Demo migration verification failed')
+
+
 def source_identity_snapshot():
     # Opaque identities only; never copy accounts or credential columns.
     return json.loads(sql(SOURCE,"SELECT json_build_object('users',COALESCE((SELECT json_agg(id) FROM users),'[]'::json),'sessions',COALESCE((SELECT json_agg(id) FROM auth_sessions),'[]'::json))",legacy=True))
@@ -99,7 +121,7 @@ def setup(database=TARGET,rebuild=False,confirmation=None):
     if exists:
         check_marker()
         current=json.loads(sql(TARGET,'SELECT json_object_agg(version,checksum) FROM schema_migrations'))
-        if current!=expected: raise RuntimeError('Demo schema version differs; update explicitly before rebuilding')
+        if current!=expected: upgrade_demo_schema(expected)
     if rebuild:
         if not exists: raise RuntimeError('Rebuild requires an existing marked demo database')
         # Guarded, explicit DEMO-only destruction; preserve a protected backup first.
@@ -130,6 +152,7 @@ def setup(database=TARGET,rebuild=False,confirmation=None):
         dump=dump.replace('CREATE SCHEMA public;','CREATE SCHEMA IF NOT EXISTS public;')
         payload='CREATE EXTENSION IF NOT EXISTS pgcrypto WITH SCHEMA public; CREATE EXTENSION IF NOT EXISTS vector WITH SCHEMA public;\n'+dump+'\nSET search_path TO public;\n'+bootstrap
         docker(['psql','-X','-U',ADMIN,'-d',TARGET,'--single-transaction','-v','ON_ERROR_STOP=1'],input=payload)
+    upgrade_demo_schema(expected)
     snapshot=source_identity_snapshot()
     sql(TARGET,'''CREATE TABLE IF NOT EXISTS demo_known_real_identities (
         kind text NOT NULL CHECK(kind IN ('user','session')), identity_id uuid NOT NULL,

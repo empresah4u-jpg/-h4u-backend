@@ -217,7 +217,8 @@ def test_commercial_notifications_and_outage_does_not_revert(wa):
 
 def test_cancellation_and_simulation(wa):
     res=reserve(wa['flow'])
-    reservations.cancel_reservation(res['code'],reservations.ReservationCancel(reason='test'))
+    from tests.test_commercial import approved_cancellation
+    approved_cancellation(wa['flow'],res,reason='test')
     assert wa['db'].execute("SELECT count(*) FROM notification_events WHERE kind='reservation.cancelled'").fetchone()[0]==1
     db=wa['db']; before=db.execute('SELECT count(*) FROM notification_events').fetchone()[0]
     from app.routers.service_requests import ServiceRequestCreate,create_service_request

@@ -16,7 +16,7 @@ from app.db import get_connection
 from app.main import app
 from app.routers import (service_requests as sr, partner_responses as pr,
                         reservations as r, passengers as ps, payments as p,
-                        refunds as rf, commissions as c, settlements as st)
+                        refunds as rf, commissions as c, settlements as st, lifecycle as lc)
 
 
 @pytest.fixture
@@ -52,8 +52,10 @@ def flow(monkeypatch):
                 with conn.transaction():
                     yield Connection()
 
-            for module in (sr, pr, r, ps, p, rf, c, st):
+            for module in (sr, pr, r, ps, p, rf, c, st, lc):
                 monkeypatch.setattr(module, 'get_connection', connection)
+            if conn.execute("SELECT to_regclass('commercial_slots')").fetchone()[0] is None:
+                conn.execute(Path('db/migrations/008_commercial_lifecycle.sql').read_text())
             token = uuid4().hex[:12]
             destination = conn.execute("INSERT INTO destinations(code,name,slug) VALUES (%s,'Audit',%s) RETURNING id", (token, token)).fetchone()[0]
             traveler = conn.execute("INSERT INTO travelers DEFAULT VALUES RETURNING id").fetchone()[0]
@@ -126,7 +128,7 @@ def test_cash_to_settlement(flow, customer_first):
 def test_reservation_duplicate_and_cancel(flow):
     res = reserve(flow)
     conflict(r.create_reservation, r.ReservationCreate(service_request_code=res['service_request']))
-    result = r.cancel_reservation(res['code'], r.ReservationCancel(reason='Audit'))
+    result = approved_cancellation(flow, res)
     assert result['status'] == 'cancelled'
     conflict(r.cancel_reservation,res['code'],r.ReservationCancel(reason='Again'))
     conflict(ps.create_passengers,res['code'],ps.PassengersCreate(passengers=[passenger()]))
@@ -138,7 +140,7 @@ def test_payment_duplicate_and_cancel(flow):
     payload = p.PaymentCreate(reservation_code=res['code'],payment_method='cash',received_by='partner')
     pay = p.create_payment(payload)
     conflict(p.create_payment,payload)
-    r.cancel_reservation(res['code'],r.ReservationCancel(reason='Audit'))
+    approved_cancellation(flow, res)
     conflict(p.confirm_cash_by_customer,pay['code'])
     assert flow['conn'].execute('SELECT status FROM payments WHERE code=%s',(pay['code'],)).fetchone()[0] == 'cancelled'
 
@@ -158,7 +160,7 @@ def test_refund_partial_duplicate_excess_and_total(flow):
     assert rf.create_refund(payload)['payment_status']=='partially_refunded'
     conflict(rf.create_refund,payload)
     conflict(rf.create_refund,rf.RefundCreate(payment_code=pay['code'],amount=71,reason='Audit'))
-    conflict(r.cancel_reservation,res['code'],r.ReservationCancel(reason='Audit'))
+    assert r.cancel_reservation(res['code'],r.ReservationCancel(reason='Audit'))['status']=='requires_manual_review'
     result=rf.create_refund(rf.RefundCreate(payment_code=pay['code'],amount=70,reason='Audit'))
     assert result['remaining_amount']==0 and result['payment_status']=='refunded'
     conflict(rf.create_refund,rf.RefundCreate(payment_code=pay['code'],amount=1,reason='Audit'))
@@ -284,3 +286,18 @@ def test_process_overdue_isolated_temporary_tables(flow):
     assert result['processed_settlements']==1 and result['suspended_partners']==1
     assert db.execute('SELECT status FROM partners').fetchone()[0]=='suspended'
     assert st.process_overdue_settlements()['processed_settlements']==0
+
+
+def approved_cancellation(flow, res, reason='Audit'):
+    """Explicit test-only policy; no implicit cancellation economics in production."""
+    from app.auth import _current_actor, Principal
+    from psycopg.types.json import Jsonb
+    config={'schema_version':1,'rules':[dict(actors=['admin'],minimum_notice_seconds=0,
+        outcome='cancel',refund_type='none',refund_value='0',currency=None)]}
+    db=flow['conn']
+    pid=db.execute("INSERT INTO cancellation_policy_versions(name,rules,actor_subject) VALUES ('test',%s,'test') RETURNING id",(Jsonb(config),)).fetchone()[0]
+    db.execute('INSERT INTO cancellation_policy_assignments(product_id,policy_id) VALUES (%s,%s)',(flow['product'],pid))
+    db.execute("UPDATE reservations SET service_at=clock_timestamp()+interval '1 day' WHERE id=%s",(res['id'],))
+    token=_current_actor.set(Principal(subject='test-cancellation-admin',role='admin'))
+    try: return r.cancel_reservation(res['code'],r.ReservationCancel(reason=reason))
+    finally: _current_actor.reset(token)

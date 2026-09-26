@@ -6,6 +6,7 @@ import json
 def main():
     parser=argparse.ArgumentParser()
     parser.add_argument('--scenario',choices=['accept','counter_offer'],default='accept')
+    parser.add_argument('--exercise-lifecycle',action='store_true',help='Cancel with an explicit demo policy and confirm a fake refund after settlement')
     parser.add_argument('--list',action='store_true',help='List stored summaries, without credentials or message content')
     args=parser.parse_args()
     from app.demo.safety import configure
@@ -17,7 +18,7 @@ def main():
         print(json.dumps([dict(zip(('id','scenario','status','created_at','summary'),r)) for r in rows],default=str,indent=2))
     else:
         from app.demo.runner import run,DemoFailure
-        try: result=run(args.scenario)
+        try: result=run(args.scenario,exercise_lifecycle=args.exercise_lifecycle)
         except DemoFailure as exc: raise SystemExit(str(exc)) from None
         print(json.dumps(result,indent=2))
 

@@ -132,3 +132,17 @@ def test_runtime_privileges_and_forbidden_connections():
             assert conn.execute("SELECT has_schema_privilege(current_user,'public','CREATE')").fetchone()==(False,)
         assert denied_connection('127.0.0.1',5432,'h4u')
         assert denied_connection(os.environ['DB_HOST'],os.environ['DB_PORT'],'postgres')
+
+
+def test_persistent_demo_configured_cancellation_and_fake_refund():
+    with patch.dict(os.environ,clear=False):
+        configure()
+        from app.demo.runner import run
+        summary=run('accept',exercise_lifecycle=True)
+        steps={step['step']:step for step in summary['steps']}
+        assert steps['lifecycle_refund']['status']=='refunded'
+        assert steps['whatsapp_fake']['external_calls']==0
+        with db.get_connection() as conn:
+            command=conn.execute('SELECT status,execution_kind,amount FROM refund_commands WHERE id=%s',(steps['lifecycle_refund']['command_id'],)).fetchone()
+            assert command==('processed','demo_fake',100)
+            assert conn.execute("SELECT count(*) FROM notification_events n JOIN reservations r ON r.id=n.reservation_id WHERE r.code=%s AND n.kind='refund.processed'",(steps['reservation']['code'],)).fetchone()==(1,)
