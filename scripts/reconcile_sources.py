@@ -80,9 +80,11 @@ def insert_links(conn, manifest):
                 .format(sql.Identifier(TABLES[kind])), (link['entity_id'],)).fetchone()
             if actual != (link['code'], link['name'], 'active'):
                 raise ValueError(f"Entity drift: {link['code']}")
-            exists = conn.execute('''SELECT 1 FROM entity_sources
+            exists = conn.execute('''SELECT source_url,verification_status,notes FROM entity_sources
                 WHERE source_id=%s AND entity_type=%s AND entity_id=%s''', key).fetchone()
             if exists:
+                if exists != (source['url'], 'MANUAL_VERIFIED_SOURCE_MATCH', link['evidence']):
+                    raise ValueError(f"Existing provenance drift: {link['code']}")
                 continue
             conn.execute('''INSERT INTO entity_sources
                 (source_id,entity_type,entity_id,source_url,verification_status,verified_at,notes)
@@ -92,11 +94,11 @@ def insert_links(conn, manifest):
     return added
 
 
-def run_transaction(conn, manifest, apply=False, expected=None):
+def run_transaction(conn, manifest, apply=False, expected=None, expected_added=None):
     with conn.transaction(force_rollback=not apply):
         conn.execute("SET LOCAL lock_timeout='5s'")
         conn.execute("SET LOCAL statement_timeout='30s'")
-        # No relational UNIQUE exists: serialize all provenance writers, including SQL clients.
+        # Serialize provenance writers while validating the complete reviewed plan.
         conn.execute('LOCK TABLE entity_sources IN SHARE ROW EXCLUSIVE MODE')
         conn.execute(sql.SQL('LOCK TABLE {} IN SHARE MODE').format(
             sql.SQL(',').join(map(sql.Identifier, PROTECTED))))
@@ -105,6 +107,8 @@ def run_transaction(conn, manifest, apply=False, expected=None):
             raise ValueError('Database changed since rehearsal; rerun for a fresh review')
         audit(conn)
         added = insert_links(conn, manifest)
+        if expected_added is not None and added != expected_added:
+            raise ValueError('Rehearsal mismatch; transaction rolled back')
         checks = audit(conn)
         after = snapshot(conn)
         if any(before[t] != after[t] for t in PROTECTED):
@@ -123,16 +127,15 @@ def reconcile(conn, manifest, apply=False):
         raise ValueError('Requires an idle autocommit connection')
     rehearsal, baseline = run_transaction(conn, manifest)
     with conn.transaction():
-        conn.execute('SET TRANSACTION READ ONLY')
+        conn.execute('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY')
         if snapshot(conn) != baseline:
             raise ValueError('Rollback verification failed or concurrent data changed')
     rehearsal['rollback_verified'] = True
     if not apply:
         return rehearsal
-    result, _ = run_transaction(conn, manifest, apply=True, expected=baseline)
+    result, _ = run_transaction(conn, manifest, apply=True, expected=baseline,
+                                expected_added=rehearsal['added'])
     result['rollback_verified'] = True
-    if result['added'] != rehearsal['added']:
-        raise AssertionError('Rehearsal mismatch')
     return result
 
 

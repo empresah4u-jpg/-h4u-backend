@@ -163,3 +163,20 @@ con DELETE/reinserción y sin esa misma protección; no fue ejecutado.
 Validación de reauditoría: 34 pruebas específicas aprobadas en 2.71s;
 435 pruebas completas aprobadas, 1 warning conocido, en 109.03s. Compilación y
 `git diff --check` correctos. Sólo documentación modificada; no --apply ni migración.
+
+## Integridad 009 aplicada (2026-09-26)
+
+En h4u ya existe `entity_embeddings_entity_unique` sobre (entity_type,entity_id),
+registrada mediante 009_catalog_integrity.sql. Se conserva el UNIQUE previo de
+content_hash sin borrar índices ni datos. La tabla representa embeddings vigentes;
+no permite múltiples versiones por entidad. El sincronizador incremental, el
+rebuild por ID y la búsqueda son compatibles. El generador legado DELETE/INSERT
+no se ejecutó y sigue sin ser la ruta recomendada.
+
+Inspección posterior: 276 activos/embeddings, 276 unchanged, create=0, update=0,
+orphan=0, unique_entity_key=true. No se ejecutó sync --apply ni se alteraron vectores,
+contenido, modelo o hashes. Dry-run de DDL con rollback de esquema/ledger/datos
+verificado antes de aplicar. Detalle y límites demo en [ingestion.md](ingestion.md#bloque-integridad-aplicado--migración-009-2026-09-26).
+
+Suite del bloque: 447 passed, 1 warning en 94.98s; específicas 46 passed en 5.52s.
+Compilación y git diff --check correctos. No commit ni push.

@@ -133,3 +133,12 @@ No configura valores económicos ni modifica registros comerciales históricos.
 
 No editar 008 después de aplicada. Nuevos cambios requieren 009+.
 Ver docs/commercial_lifecycle.md para políticas, jobs y el hallazgo histórico de pasajeros.
+
+### 009 — integridad de catálogos
+
+`python -m scripts.apply_catalog_integrity` ensaya ambos UNIQUE y revierte,
+comprobando esquema/índices/schema_migrations/datos. `--apply` repite ese ensayo
+antes de aplicar atómicamente con checksum y prerrequisitos 002–008.
+No deduplica ni elimina filas; incompatibilidades abortan. Aplicada a h4u el
+2026-09-26. El upgrade incremental de demo todavía requiere soporte explícito 009;
+no ejecutar un rebuild para sortearlo. Véase docs/ingestion.md.

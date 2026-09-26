@@ -601,3 +601,104 @@ de Python. `git diff --check` correcto. Sólo se extendieron documentos en esta
 reauditoría; sin --apply, migraciones, commit ni push. Recomendación: checkpoint
 apto para commit con estas limitaciones documentadas; UNIQUE y normalización de
 URLs son trabajos posteriores separados, no motivos para alterar datos en auditoría.
+
+## Bloque integridad aplicado — migración 009 (2026-09-26)
+
+Este apartado actualiza las recomendaciones históricas anteriores: los dos UNIQUE
+ya se aplicaron en **h4u**. No se modificaron catálogos, vectores, contenidos,
+hashes, usuarios ni lógica comercial. Las cuatro fuentes pendientes siguen intactas.
+
+`009_catalog_integrity.sql` agrega exclusivamente:
+
+- `entity_sources_source_entity_unique`: UNIQUE(source_id,entity_type,entity_id).
+- `entity_embeddings_entity_unique`: UNIQUE(entity_type,entity_id).
+
+Se conservan PK, FK e índices anteriores, incluido el UNIQUE con content_hash.
+No hubo DELETE, deduplicación ni recreación de tablas. El runner
+`scripts.apply_catalog_integrity` usa el mismo advisory lock de migraciones H4U,
+prerrequisitos 002–008 con checksum, registro schema_migrations y transacción.
+Antes de DDL audita referencias, duplicados y contrato completo de embeddings;
+los bloqueos estabilizan las tablas mientras valida. Si el checksum o constraint
+registrado no coincide, falla sin reparar silenciosamente.
+
+```sh
+python -m scripts.apply_catalog_integrity          # ensayo + rollback verificado
+python -m scripts.apply_catalog_integrity --apply  # ensayo obligatorio + aplicación
+```
+
+Ensayo real: constraints presentes dentro de la transacción, integridad correcta,
+ROLLBACK y comparación exacta de esquema/índices/ledger/fingerprints de datos.
+Aplicación real: 2026-09-26 19:15:49 UTC, sólo h4u. Checksum registrado y local:
+`dc1c1c778459e2cb26d6235159ffc3ff524240cd797d407ab70e70ba483c2e1e`.
+
+Antes/después: entity_sources=108, data_sources=59, pending_sources=4;
+hotels=91, restaurants=98, tours=50, attractions=37; venues=12,
+emergency_services=25, general_services=29, embeddings=276.
+Grupos duplicados y filas afectadas: 0/0 para ambas claves. Referencias huérfanas,
+tipos desconocidos y NULL en claves: cero. Los NULL opcionales de confianza no
+se consideran errores. Sync posterior: 276 activos, 276 unchanged, create/update/
+orphan/blocked=0, written=0, unique_entity_key=true.
+
+### URLs normalizadas individualmente
+
+`scripts.normalize_provenance_urls` usa exclusivamente el manifiesto revisado
+`data/provenance/url_normalization.json`. Por defecto ensaya y revierte. --apply
+requiere que el ensayo/rollback coincida, y valida todos los campos de todas las
+relaciones antes del commit: únicamente las URLs autorizadas pueden cambiar.
+Valida UUID de relación/fuente/entidad, nombres, códigos y URL vigente de la fuente;
+no sustituye una URL distinta ya poblada y repetir no cambia filas.
+
+| entity_source UUID | Entidad | URL verificada |
+|---|---|---|
+| 2dad45b9-91b1-4994-acb8-ea36a126ef21 | TP001 Paracas Responsable | https://www.paracasresponsable.com/servicios/ |
+| 6e002965-2603-4a27-8ae4-ffeaf233829a | VEN006 Sala de Conferencias Barlovento | https://www.marriott.com/es/hotels/piolc-hotel-paracas-a-luxury-collection-resort-paracas/events/ |
+| 06bce7b7-3599-4189-a9a8-6eb810fd47cc | VEN008 Pérgola | Misma página Marriott |
+| 7f8af101-93b4-446a-8b1a-b246b10cb333 | VEN009 Jardín Bar Lounge | Misma página Marriott |
+
+La página de servicios identifica a Paracas Responsable SAC y sus traslados.
+La tabla de capacidades Marriott enumera explícitamente los tres espacios.
+Las notas originales de los venues señalan esa página oficial de eventos.
+Se preservó el significado de respaldo documental, sin cambiar capacidad, estado,
+confianza ni timestamps. No se afirma reconstruir el historial del creador original.
+Ensayo/rollback y aplicación de las cuatro filas correctos.
+
+Permanecen dos NULL, sin modificación:
+
+- 337fea16-325f-4396-b980-f28c0c4dae0f, TP002 Wayki Bus,
+  fuente 909072f0-93e1-44e8-bee5-bbfa1543ae1b, https://waykibus.com/:
+  timeout; falta contenido accesible para comprobar la evidencia.
+- 618c441c-e664-4d6b-93da-721cbeae6cc1, VEN007 Jardín Arena,
+  fuente cac992db-ca98-468d-b020-831cf5b8787a, página Marriott anterior:
+  lista Jardín Barlovento, pero no acredita inequívocamente que sea Jardín Arena.
+  No se inventó equivalencia ni se renombró la entidad.
+
+### Atomicidad y pruebas
+
+reconcile_sources compara el resultado de ensayo con la aplicación **antes de
+salir de la transacción**. Un desacuerdo revierte las inserciones. El control de
+rollback usa REPEATABLE READ READ ONLY. También rechaza URLs/estado/notas de una
+relación existente que difieran del manifiesto, sin corregirlos silenciosamente.
+Conserva dry-run por defecto, --apply explícito e idempotencia.
+
+Tests adicionales ejecutan el SQL real de 009 en tablas TEMP, sin quitar constraints
+persistentes: rechazo de claves duplicadas incluso con distinto content_hash,
+varias fuentes por entidad, varias entidades por fuente y embeddings diferentes.
+También comprueban rollback de todo el DDL ante duplicados, ledger/checksum,
+repetición del runner, discrepancia precommit, drift de provenance y normalización
+selectiva/idempotente de URLs. Las fixtures pre-migración sin índices se conservan
+para probar rechazo de datos heredados; no representan el esquema productivo nuevo.
+
+### Alcance demo y riesgo pendiente
+
+009 se aplicó sólo a h4u. El mecanismo actual `setup_demo.upgrade_demo_schema`
+sólo admite actualización incremental 008 y debe incorporar 009 antes de actualizar
+una demo existente. `audit_demo` compara todas las migraciones del repositorio;
+una demo todavía en 008 reportará mismatch. No se ocultó esa señal ni se tocó su
+base en este bloque. El despliegue conjunto normal/demo requiere resolver esa
+compatibilidad; los tests de este bloque no equivalen a una actualización de demo.
+
+Validación final del bloque: **46 passed in 5.52s** en pruebas específicas;
+**447 passed, 1 warning in 94.98s** en suite completa (12 casos nuevos).
+Warning conocido urllib3/LibreSSL 2.8.3. Compilación correcta y git diff --check
+sin errores. Sin commit ni push. h4u validada; NO APTO para commit/despliegue conjunto
+hasta acordar y completar compatibilidad incremental de demo con 009.

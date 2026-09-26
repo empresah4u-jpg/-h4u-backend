@@ -146,3 +146,152 @@ def test_persistent_demo_configured_cancellation_and_fake_refund():
             command=conn.execute('SELECT status,execution_kind,amount FROM refund_commands WHERE id=%s',(steps['lifecycle_refund']['command_id'],)).fetchone()
             assert command==('processed','demo_fake',100)
             assert conn.execute("SELECT count(*) FROM notification_events n JOIN reservations r ON r.id=n.reservation_id WHERE r.code=%s AND n.kind='refund.processed'",(steps['reservation']['code'],)).fetchone()==(1,)
+
+
+# ---------------------------------------------------------------------------
+# Demo incremental schema upgrade compatibility: 008 -> 009
+# ---------------------------------------------------------------------------
+
+def test_upgrade_demo_schema_accepts_only_009(monkeypatch):
+    import scripts.setup_demo as setup
+
+    expected = {
+        '008_commercial_lifecycle.sql': 'checksum-008',
+        '009_catalog_integrity.sql': 'checksum-009',
+    }
+    current = {
+        '008_commercial_lifecycle.sql': 'checksum-008',
+    }
+
+    calls = []
+
+    monkeypatch.setattr(setup, 'check_marker', lambda: None)
+
+    def fake_sql(database, statement, legacy=False):
+        calls.append(statement)
+
+        if 'SELECT json_object_agg(version,checksum)' in statement:
+            if any('COMMIT' in call for call in calls):
+                return __import__('json').dumps(expected)
+            return __import__('json').dumps(current)
+
+        if "to_regclass('public.commercial_slots')" in statement:
+            return 'f'
+
+        return ''
+
+    monkeypatch.setattr(setup, 'sql', fake_sql)
+
+    setup.upgrade_demo_schema(expected)
+
+    combined = '\n'.join(calls)
+    assert "VALUES ('009_catalog_integrity.sql','checksum-009')" in combined
+    assert '008_commercial_lifecycle.sql' not in combined
+    assert 'ADD CONSTRAINT entity_sources_source_entity_unique' in combined
+    assert 'ADD CONSTRAINT entity_embeddings_entity_unique' in combined
+    assert 'ROLLBACK' in combined
+    assert 'COMMIT' in combined
+
+
+def test_upgrade_demo_schema_accepts_008_and_009(monkeypatch):
+    import scripts.setup_demo as setup
+
+    expected = {
+        '008_commercial_lifecycle.sql': 'checksum-008',
+        '009_catalog_integrity.sql': 'checksum-009',
+    }
+
+    calls = []
+    monkeypatch.setattr(setup, 'check_marker', lambda: None)
+
+    def fake_sql(database, statement, legacy=False):
+        calls.append(statement)
+
+        if 'SELECT json_object_agg(version,checksum)' in statement:
+            if any('COMMIT' in call for call in calls):
+                return __import__('json').dumps(expected)
+            return '{}'
+
+        if "to_regclass('public.commercial_slots')" in statement:
+            return 't'
+
+        return ''
+
+    monkeypatch.setattr(setup, 'sql', fake_sql)
+
+    setup.upgrade_demo_schema(expected)
+
+    combined = '\n'.join(calls)
+    assert 'CREATE TABLE commercial_product_settings' in combined
+    assert 'ADD CONSTRAINT entity_sources_source_entity_unique' in combined
+    assert 'ROLLBACK' in combined
+    assert 'COMMIT' in combined
+
+
+def test_upgrade_demo_schema_is_noop_when_current(monkeypatch):
+    import scripts.setup_demo as setup
+
+    expected = {
+        '008_commercial_lifecycle.sql': 'checksum-008',
+        '009_catalog_integrity.sql': 'checksum-009',
+    }
+
+    monkeypatch.setattr(setup, 'check_marker', lambda: None)
+
+    calls = []
+
+    def fake_sql(database, statement, legacy=False):
+        calls.append(statement)
+        return __import__('json').dumps(expected)
+
+    monkeypatch.setattr(setup, 'sql', fake_sql)
+
+    setup.upgrade_demo_schema(expected)
+
+    assert len(calls) == 1
+
+
+def test_upgrade_demo_schema_rejects_unknown_missing_migration(monkeypatch):
+    import scripts.setup_demo as setup
+    import pytest
+
+    expected = {
+        '008_commercial_lifecycle.sql': 'checksum-008',
+        '009_catalog_integrity.sql': 'checksum-009',
+        '010_unknown.sql': 'checksum-010',
+    }
+
+    monkeypatch.setattr(setup, 'check_marker', lambda: None)
+    monkeypatch.setattr(
+        setup,
+        'sql',
+        lambda database, statement, legacy=False: '{}',
+    )
+
+    with pytest.raises(RuntimeError, match='No reviewed incremental upgrade'):
+        setup.upgrade_demo_schema(expected)
+
+
+def test_upgrade_demo_schema_rejects_checksum_mismatch(monkeypatch):
+    import scripts.setup_demo as setup
+    import pytest
+    import json
+
+    expected = {
+        '008_commercial_lifecycle.sql': 'correct-008',
+        '009_catalog_integrity.sql': 'correct-009',
+    }
+
+    current = {
+        '008_commercial_lifecycle.sql': 'WRONG',
+    }
+
+    monkeypatch.setattr(setup, 'check_marker', lambda: None)
+    monkeypatch.setattr(
+        setup,
+        'sql',
+        lambda database, statement, legacy=False: json.dumps(current),
+    )
+
+    with pytest.raises(RuntimeError, match='Demo migration checksum mismatch'):
+        setup.upgrade_demo_schema(expected)

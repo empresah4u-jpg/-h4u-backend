@@ -89,10 +89,14 @@ def upgrade_demo_schema(expected):
         raise RuntimeError('Demo migration checksum mismatch')
     missing=sorted(set(expected)-set(current))
     if not missing: return
-    if missing!=['008_commercial_lifecycle.sql']:
+    reviewed = ['008_commercial_lifecycle.sql', '009_catalog_integrity.sql']
+    if not missing or missing != [name for name in reviewed if name in missing]:
         raise RuntimeError('No reviewed incremental upgrade for this schema')
-    source=(ROOT/'db/migrations'/missing[0]).read_text()
-    registration="INSERT INTO schema_migrations(version,checksum) VALUES ('"+missing[0]+"','"+expected[missing[0]]+"');"
+    source=''.join((ROOT/'db/migrations'/name).read_text()+'\n' for name in missing)
+    registration=''.join(
+        "INSERT INTO schema_migrations(version,checksum) VALUES ('"+name+"','"+expected[name]+"');"
+        for name in missing
+    )
     guard="SELECT pg_advisory_xact_lock(hashtext('h4u-schema-migrations')); SET LOCAL lock_timeout='5s'; SET LOCAL statement_timeout='30s';"
     before=sql(TARGET,"SELECT to_regclass('public.commercial_slots') IS NULL")
     sql(TARGET,'BEGIN;'+guard+source+registration+'ROLLBACK;')

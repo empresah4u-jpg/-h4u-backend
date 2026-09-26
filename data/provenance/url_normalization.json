@@ -1,0 +1,46 @@
+[
+  {
+    "id": "06bce7b7-3599-4189-a9a8-6eb810fd47cc",
+    "source_id": "cac992db-ca98-468d-b020-831cf5b8787a",
+    "entity_type": "venue",
+    "entity_id": "4b15cef6-51f9-4e64-b51b-669b8ea53b8a",
+    "source_name": "Hotel Paracas events",
+    "url": "https://www.marriott.com/es/hotels/piolc-hotel-paracas-a-luxury-collection-resort-paracas/events/",
+    "code": "VEN008",
+    "name": "Hotel Paracas - Pérgola",
+    "evidence": "Revisión 2026-09-26: tabla de capacidades Marriott enumera explícitamente este espacio de eventos."
+  },
+  {
+    "id": "2dad45b9-91b1-4994-acb8-ea36a126ef21",
+    "source_id": "ee07b9ec-e731-4324-aa41-6e53252d9024",
+    "entity_type": "transport_provider",
+    "entity_id": "f572d9a7-40c4-431f-b471-ecc1a26320a3",
+    "source_name": "Paracas Responsable",
+    "url": "https://www.paracasresponsable.com/servicios/",
+    "code": "TP001",
+    "name": "Paracas Responsable",
+    "evidence": "Revisión 2026-09-26: página oficial de servicios identifica Paracas Responsable SAC y sus traslados."
+  },
+  {
+    "id": "6e002965-2603-4a27-8ae4-ffeaf233829a",
+    "source_id": "cac992db-ca98-468d-b020-831cf5b8787a",
+    "entity_type": "venue",
+    "entity_id": "6bd82121-9e36-44b9-aeba-ce26b4ab0e34",
+    "source_name": "Hotel Paracas events",
+    "url": "https://www.marriott.com/es/hotels/piolc-hotel-paracas-a-luxury-collection-resort-paracas/events/",
+    "code": "VEN006",
+    "name": "Hotel Paracas - Sala de Conferencias Barlovento",
+    "evidence": "Revisión 2026-09-26: tabla de capacidades Marriott enumera explícitamente este espacio de eventos."
+  },
+  {
+    "id": "7f8af101-93b4-446a-8b1a-b246b10cb333",
+    "source_id": "cac992db-ca98-468d-b020-831cf5b8787a",
+    "entity_type": "venue",
+    "entity_id": "18876cd0-b042-48b2-b00d-c3b488ece601",
+    "source_name": "Hotel Paracas events",
+    "url": "https://www.marriott.com/es/hotels/piolc-hotel-paracas-a-luxury-collection-resort-paracas/events/",
+    "code": "VEN009",
+    "name": "Hotel Paracas - Jardín Bar Lounge",
+    "evidence": "Revisión 2026-09-26: tabla de capacidades Marriott enumera explícitamente este espacio de eventos."
+  }
+]
