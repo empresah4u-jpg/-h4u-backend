@@ -702,3 +702,93 @@ Validación final del bloque: **46 passed in 5.52s** en pruebas específicas;
 Warning conocido urllib3/LibreSSL 2.8.3. Compilación correcta y git diff --check
 sin errores. Sin commit ni push. h4u validada; NO APTO para commit/despliegue conjunto
 hasta acordar y completar compatibilidad incremental de demo con 009.
+
+## Ingesta de hoteles: validación y preview (2026-09-28)
+
+Primera implementación operativa, exclusivamente de inspección. No conecta a
+proveedores, no descarga URLs, no carga embeddings ni tiene modo --apply.
+`pipelines.validate_entities` contiene contrato base, evidencia, normalización
+sintáctica de URLs, validación y comparación conservadora de nombres reutilizables.
+`HotelInput` y `pipelines.load_hotels.preview` añaden las reglas de hoteles.
+La función pura recibe un snapshot; `inspect` obtiene ese snapshot con SELECT en
+una única transacción REPEATABLE READ READ ONLY. No hay INSERT/UPDATE/DELETE.
+
+```sh
+python -m pipelines.load_hotels /ruta/al/lote.json
+```
+
+Entrada: array JSON. Cada elemento requiere `code` (hasta 20 caracteres), `name`
+(hasta 200), `destination` (código existente y activo), `source_id` (UUID de una
+fuente existente y activa), `source_url` y `metadata.note` con evidencia.
+`code` es obligatorio porque hotels.code es NOT NULL/UNIQUE; no se generan códigos.
+`source` es un nombre opcional que, si se proporciona, debe coincidir con la fuente.
+Se rechazan campos desconocidos y coerciones de tipos; no se aceptan null explícitos
+para limpiar campos. Campos omitidos conservan su valor existente. CREATE adopta
+status active por defecto; sólo se admiten active/inactive en este contrato inicial.
+
+Campos opcionales de hotels: `address`, `phone`, `website`, `category`, `zone`,
+`latitude` y `longitude` (par numérico válido), `google_place_id`, `status`.
+El formato telefónico admite dígitos y separadores básicos, sin inferir país.
+No se aceptan verification_status/confidence_score desde la entrada.
+
+El schema no tiene description, estrellas ni identificador externo genérico.
+Se conservan como `metadata.description`, `metadata.stars` (entero 1–5),
+`external_id` y `metadata.source_reference`, sin convertirlos en columnas ni
+interpretar rating como estrellas. El preview marca esos datos como metadata_only.
+No existe aún un almacenamiento durable para external_id genérico: sólo detecta
+repeticiones dentro del lote; no es clave de enlace automática contra la BD.
+
+Ejemplo completamente ficticio (UUID/destino deben existir en el snapshot de prueba):
+
+```json
+[{
+  "code": "FAKE001",
+  "name": "Fictional Hotel",
+  "destination": "FICTITIOUS",
+  "source_id": "11111111-1111-4111-8111-111111111111",
+  "source_url": "https://example.invalid/",
+  "external_id": "fictional-001",
+  "metadata": {"note": "Synthetic evidence", "description": "Fictitious description", "stars": 4}
+}]
+```
+
+Clasificación por registro, con índice, motivos y cambios cuando corresponda:
+
+- CREATE: ninguna coincidencia por código, Google place ID o nombre normalizado
+  dentro del destino. Es propuesta, no alta ni validación humana de evidencia.
+- UPDATE: identidad fuerte coincidente y cambios en entidad explícitamente no
+  verificada, sin confianza ni fecha de verificación ni provenance verificado.
+- UNCHANGED: campos de catálogo suministrados equivalentes. La procedencia puede
+  seguir requiriendo revisión: se informa por separado en `provenance.operation`.
+- CONFLICT: identidad ambigua, coincidencia sólo por nombre, cambio de destino,
+  cambio de código/identificador Google existente, datos protegidos o evidencia
+  incompatible. Estados de verificación desconocidos se protegen por defecto.
+- REJECT: contrato/formato inválido, fuente/destino ausente o inactivo, o duplicados
+  del lote. Se rechazan todas las apariciones duplicadas válidas, no sólo la última.
+
+Duplicados del lote: code, Google place ID, external_id dentro de source_id o mismo
+nombre normalizado en el destino. Esta última regla es conservadora: sucursales
+homónimas requieren revisión. No hay fuzzy matching ni geografía como evidencia.
+
+URLs: sólo HTTP(S), sin credenciales; normaliza esquema/host, puerto por defecto y
+ruta vacía. Conserva path, query y fragmento; no elimina parámetros ni transforma
+http en https. Es normalización sintáctica, no prueba de equivalencia de fuentes.
+La URL entrante debe corresponder a la registrada en data_sources. URLs alternas,
+NULL históricos y notas existentes distintas se señalan para revisión; no se
+invoca normalize_provenance_urls ni reconcile_sources porque ambos ensayan escrituras.
+Se respeta la clave 009 (source_id,entity_type,entity_id); no se genera provenance
+ni se afirma que una nota entrante esté verificada. No se modifica block_5a.json.
+
+No hay migraciones. Para futura aplicación habrá que autorizar política de escritura,
+almacenamiento de referencias externas/metadata y verificación de evidencia. El
+preview no es una promesa de que un lote pueda aplicarse sin esa revisión.
+
+Las pruebas usan snapshots ficticios, sin Internet; una prueba del adaptador verifica
+transaction_read_only=on mediante lectura de PostgreSQL, sin insertar fixtures reales.
+El lote mixto ficticio devuelve total=5, create=1, update=1, unchanged=1,
+conflict=1, reject=1 y el resultado es idéntico al repetirlo.
+
+Validación: específicas **27 passed in 0.98s**; suite completa ejecutada una sola
+vez, **479 passed, 1 warning in 133.97s** (urllib3/LibreSSL conocido).
+Compilación y git diff --check correctos. Sin nuevas dependencias, migraciones,
+credenciales externas ni escrituras de catálogo en h4u. Sin commit ni push.

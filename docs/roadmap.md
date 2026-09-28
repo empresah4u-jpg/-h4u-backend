@@ -79,9 +79,9 @@ Se cargó el dataset en PostgreSQL.
 
 Se habilitó pgvector.
 
-Se generaron embeddings reales utilizando:
+Contrato actual de embeddings (app/embeddings.py):
 
-sentence-transformers/all-MiniLM-L6-v2
+sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2
 
 Dimensión:
 
@@ -190,7 +190,10 @@ Docker Compose administra PostgreSQL utilizando volumen persistente.
 
 # DÍA 4 — CAPA DE INGESTA
 
-Estado: SIGUIENTE
+Estado: EN PROGRESO — hoteles con validación y preview de solo lectura.
+Los módulos de extracción externos siguen sin implementación operativa.
+No existe todavía aplicación autorizada de estos lotes al catálogo.
+Ver docs/ingestion.md para el contrato y límites.
 
 Objetivo:
 
@@ -417,7 +420,7 @@ Día 1: COMPLETADO
 Día 2: COMPLETADO
 Día 3: COMPLETADO
 Organización técnica: EN PROGRESO
-Día 4: SIGUIENTE
+Día 4: EN PROGRESO (validación/preview de hoteles)
 
 H4U ya dispone de:
 
