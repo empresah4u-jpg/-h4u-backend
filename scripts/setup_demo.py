@@ -80,6 +80,13 @@ def configure_runtime(password):
         DO $$ BEGIN IF to_regclass('public.entity_source_evidence') IS NOT NULL THEN
             REVOKE UPDATE,DELETE,TRUNCATE ON entity_source_evidence FROM h4u_demo_app;
         END IF; END $$;
+        DO $$ BEGIN IF to_regclass('public.ingestion_plans') IS NOT NULL THEN
+            REVOKE ALL ON ingestion_plans,ingestion_embedding_jobs FROM h4u_demo_app;
+            GRANT SELECT,INSERT ON ingestion_plans,ingestion_embedding_jobs TO h4u_demo_app;
+            GRANT UPDATE(status,result,applied_at) ON ingestion_plans TO h4u_demo_app;
+            GRANT UPDATE(status,attempts,last_error,updated_at,completed_at) ON ingestion_embedding_jobs TO h4u_demo_app;
+            GRANT EXECUTE ON FUNCTION lock_ingestion_source_evidence() TO h4u_demo_app;
+        END IF; END $$;
         REVOKE ALL ON demo_environment,schema_migrations FROM h4u_demo_app;
         GRANT SELECT ON demo_environment,schema_migrations TO h4u_demo_app;''')
 
@@ -92,6 +99,10 @@ def upgrade_demo_schema(expected):
         raise RuntimeError('Demo migration checksum mismatch')
     missing=sorted(set(expected)-set(current))
     if not missing: return
+    if missing == ['011_ingestion_apply.sql']:
+        from scripts.apply_ingestion_migration import run_demo
+        run_demo(persist=True)
+        return
     if missing == ['010_entity_source_evidence.sql']:
         from scripts.apply_source_evidence import run_demo
         run_demo(persist=True)

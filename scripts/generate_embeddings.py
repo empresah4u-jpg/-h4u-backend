@@ -18,6 +18,18 @@ def content_hash(content):
     return hashlib.sha256(content.encode("utf-8")).hexdigest()
 
 
+def hotel_content(hotel):
+    """Single canonical renderer shared with ingestion; preserve historical format."""
+    return (
+        f"Tipo: hotel. "
+        f"Nombre: {clean(hotel.get('name'))}. "
+        f"Categoría: {clean(hotel.get('category'))}. "
+        f"Dirección: {clean(hotel.get('address'))}. "
+        f"Rating: {clean(hotel.get('rating'))}. "
+        f"Precio observado: {clean(hotel.get('price_observed'))} {clean(hotel.get('currency'))}."
+    )
+
+
 def load_entities(cur):
     entities = []
 
@@ -43,14 +55,7 @@ def load_entities(cur):
     for row in cur.fetchall():
         entity_id, destination_id, name, category, address, rating, price, currency = row
 
-        content = (
-            f"Tipo: hotel. "
-            f"Nombre: {clean(name)}. "
-            f"Categoría: {clean(category)}. "
-            f"Dirección: {clean(address)}. "
-            f"Rating: {clean(rating)}. "
-            f"Precio observado: {clean(price)} {clean(currency)}."
-        )
+        content = hotel_content(dict(name=name,category=category,address=address,rating=rating,price_observed=price,currency=currency))
 
         entities.append(
             {

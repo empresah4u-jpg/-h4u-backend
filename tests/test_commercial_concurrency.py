@@ -59,8 +59,12 @@ def pair(first,second):
 
 
 def settlement(flow):
+    # Use the fixture commission date in PostgreSQL, not the host's local day.
+    with get_connection() as conn:
+        period=conn.execute('SELECT max(earned_at)::date FROM commissions WHERE partner_id=%s',(flow['partner'],)).fetchone()[0]
+    assert period is not None
     return st.create_settlement(st.SettlementCreate(partner_code=flow['partner_code'],
-        period_start=date.today(),period_end=date.today(),due_date=date.today(),currency='PEN'))
+        period_start=period,period_end=period,due_date=period,currency='PEN'))
 
 
 def test_last_capacity_has_exactly_one_winner(demo_flow):

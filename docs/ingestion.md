@@ -841,3 +841,13 @@ Validación del checkpoint anterior: específicas **27 passed in 0.98s**; suite 
 vez, **479 passed, 1 warning in 133.97s** (urllib3/LibreSSL conocido).
 Compilación y git diff --check correctos. Sin nuevas dependencias, migraciones,
 credenciales externas ni escrituras de catálogo en h4u. Sin commit ni push.
+
+### Bloque 011 — motor transaccional desplegado
+
+Se incorpora contrato validated plan, ledger durable y jobs de embeddings. La migración
+011 se aplicó mediante el ejecutor oficial, primero en DEMO y después en H4U,
+con fingerprints intactos. H4U conserva el ledger y la cola vacíos. El runtime
+DEMO completó un APPLY ficticio y un job con encoder FAKE sin ampliar sus permisos
+SELECT/INSERT sobre evidencias.
+Flujo, límites, recuperación y pruebas: [ingestion_apply.md](ingestion_apply.md).
+No se han aplicado lotes históricos ni cargado las 12 evidencias ADD.

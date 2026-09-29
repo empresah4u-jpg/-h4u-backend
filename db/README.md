@@ -161,3 +161,16 @@ El upgrade demo desde 009 usa el mismo ejecutor; no requiere rebuild.
 Permisos runtime demo: SELECT/INSERT, sin UPDATE/DELETE/TRUNCATE.
 No se cargaron evidencias. Integridad conservada y auditoría demo EXIT=0.
 Véase la semántica del preview en [ingestion](../docs/ingestion.md).
+
+### 011 — planes de ingesta y trabajos de embeddings
+
+`011_ingestion_apply.sql` añade ledger, cola, constraints, índices y guardas.
+Aplicada oficialmente primero en DEMO y después en H4U, con ensayo rollback,
+checksum registrado e integridad de las seis tablas protegidas comprobada.
+001–010 permanecen intactas. H4U no recibió planes, jobs ni lotes reales.
+
+Ejecutor: `python -m scripts.apply_ingestion_migration` (ensayo por defecto);
+`--demo --apply` utiliza setup oficial; `--apply` despliega en H4U local.
+El lock de evidencias usa una función SECURITY DEFINER limitada; runtime conserva
+SELECT/INSERT sobre evidencias, sin EXECUTE para PUBLIC.
+Véase [ingestion_apply](../docs/ingestion_apply.md) para permisos, límites y pruebas.

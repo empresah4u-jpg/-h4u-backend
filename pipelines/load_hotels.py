@@ -97,14 +97,19 @@ def inspect(conn,records):
     with conn.transaction():
         conn.execute('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY')
         conn.execute("SET LOCAL statement_timeout='15s'")
-        def rows(query):return [r[0] for r in conn.execute(query).fetchall()]
-        state={'destinations':rows('SELECT jsonb_build_object(\'id\',id,\'code\',code,\'status\',status) FROM destinations ORDER BY id'),
-               'sources':rows('SELECT jsonb_build_object(\'id\',id,\'name\',name,\'url\',url,\'status\',status) FROM data_sources ORDER BY id'),
-               'hotels':rows('SELECT to_jsonb(h) FROM hotels h ORDER BY id'),
-               'links':rows("SELECT to_jsonb(e) FROM entity_sources e WHERE entity_type='hotel' ORDER BY id")}
-        if conn.execute("SELECT to_regclass('entity_source_evidence')").fetchone()[0] is not None:
-            state['evidence']=rows("SELECT to_jsonb(e) FROM entity_source_evidence e JOIN entity_sources s ON s.id=e.entity_source_id WHERE s.entity_type='hotel' ORDER BY e.id")
-        return preview(records,state)
+        return preview(records,read_state(conn))
+
+
+def read_state(conn):
+    """Read inside the caller-owned snapshot/transaction."""
+    def rows(query):return [r[0] for r in conn.execute(query).fetchall()]
+    state={'destinations':rows('SELECT jsonb_build_object(\'id\',id,\'code\',code,\'status\',status) FROM destinations ORDER BY id'),
+           'sources':rows('SELECT jsonb_build_object(\'id\',id,\'name\',name,\'url\',url,\'status\',status) FROM data_sources ORDER BY id'),
+           'hotels':rows("SELECT to_jsonb(h) || jsonb_build_object('rating',h.rating::text,'price_observed',h.price_observed::text) FROM hotels h ORDER BY id"),
+           'links':rows("SELECT to_jsonb(e) FROM entity_sources e WHERE entity_type='hotel' ORDER BY id")}
+    if conn.execute("SELECT to_regclass('entity_source_evidence')").fetchone()[0] is not None:
+        state['evidence']=rows("SELECT to_jsonb(e) FROM entity_source_evidence e JOIN entity_sources s ON s.id=e.entity_source_id WHERE s.entity_type='hotel' ORDER BY e.id")
+    return state
 
 
 def main():

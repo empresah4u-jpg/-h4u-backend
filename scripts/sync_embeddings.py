@@ -8,7 +8,7 @@ from psycopg.pq import TransactionStatus
 
 from app.db import get_connection
 from app.embeddings import MODEL_NAME, DIMENSIONS, get_model, vector_to_pg, check_storage
-from scripts.generate_embeddings import load_entities, content_hash
+from scripts.generate_embeddings import load_entities, content_hash, hotel_content
 
 ENTITY_TYPES = frozenset({'hotel', 'restaurant', 'tour', 'attraction'})
 
@@ -132,6 +132,35 @@ def synchronize(conn, *, apply=False):
                     raise RuntimeError('Unexpected number of embedding rows affected')
                 summary['written'] += 1
             return summary
+
+
+def synchronize_hotel(cur, entity_id, expected_hash, *, model_factory=None):
+    """Targeted reconciliation inside worker-owned locks/transaction, never commits."""
+    check_storage(cur)
+    cur.execute("SELECT to_jsonb(h) || jsonb_build_object('rating',h.rating::text,'price_observed',h.price_observed::text) FROM hotels h WHERE id=%s",(entity_id,))
+    row=cur.fetchone()
+    if row is None or row[0]['status']!='active':
+        raise ValueError('Hotel unavailable')
+    hotel=row[0];content=hotel_content(hotel)
+    digest=content_hash(content)
+    if digest!=expected_hash:
+        raise ValueError('Semantic state changed')
+    cur.execute("SELECT id,content_hash,embedding_model,embedding::text,content,destination_id::text FROM entity_embeddings WHERE entity_type='hotel' AND entity_id=%s",(entity_id,))
+    stored=cur.fetchall()
+    if len(stored)>1:
+        raise ValueError('Duplicate embeddings')
+    old=stored[0] if stored else None
+    if old and old[1]==digest and old[2]==MODEL_NAME and valid_vector(old[3]) and old[4]==content and old[5]==hotel['destination_id']:
+        return False
+    vector=(model_factory or get_model)().encode(content,normalize_embeddings=True)
+    if not valid_vector(vector):
+        raise ValueError('Invalid generated vector')
+    values=(hotel['destination_id'],entity_id,content,vector_to_pg(vector),MODEL_NAME,digest)
+    if old:
+        cur.execute("UPDATE entity_embeddings SET destination_id=%s,entity_id=%s,content=%s,embedding=%s::vector,embedding_model=%s,content_hash=%s,updated_at=clock_timestamp() WHERE id=%s",(*values,old[0]))
+    else:
+        cur.execute("INSERT INTO entity_embeddings(destination_id,entity_id,content,embedding,embedding_model,content_hash,entity_type) VALUES (%s,%s,%s,%s::vector,%s,%s,'hotel')",values)
+    return True
 
 
 def main():
