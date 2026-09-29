@@ -142,3 +142,22 @@ antes de aplicar atómicamente con checksum y prerrequisitos 002–008.
 No deduplica ni elimina filas; incompatibilidades abortan. Aplicada a h4u el
 2026-09-26. El upgrade incremental de demo todavía requiere soporte explícito 009;
 no ejecutar un rebuild para sortearlo. Véase docs/ingestion.md.
+
+
+### 010 — evidencias de provenance
+
+`010_entity_source_evidence.sql` crea la tabla hija append-only y su deduplicación
+por vínculo/fingerprint calculado por PostgreSQL. Mantiene 009 y la evidencia
+legacy intactas; no realiza backfill.
+
+Ejecutor oficial (dry-run por defecto, ensayo con rollback obligatorio):
+
+- Demo: `python -m scripts.apply_source_evidence --demo --apply`.
+- H4U local: `python -m scripts.apply_source_evidence --apply`.
+
+Aplicada el 2026-09-28 a ambas bases; checksum
+`05868d0c95a569da8efd829e3a60d0a5dc55fa754a51e3c35c712a7718354ac0`.
+El upgrade demo desde 009 usa el mismo ejecutor; no requiere rebuild.
+Permisos runtime demo: SELECT/INSERT, sin UPDATE/DELETE/TRUNCATE.
+No se cargaron evidencias. Integridad conservada y auditoría demo EXIT=0.
+Véase la semántica del preview en [ingestion](../docs/ingestion.md).

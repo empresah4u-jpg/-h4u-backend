@@ -77,6 +77,9 @@ def configure_runtime(password):
         GRANT USAGE ON SCHEMA public TO h4u_demo_app;
         GRANT SELECT,INSERT,UPDATE ON ALL TABLES IN SCHEMA public TO h4u_demo_app;
         GRANT USAGE,SELECT ON ALL SEQUENCES IN SCHEMA public TO h4u_demo_app;
+        DO $$ BEGIN IF to_regclass('public.entity_source_evidence') IS NOT NULL THEN
+            REVOKE UPDATE,DELETE,TRUNCATE ON entity_source_evidence FROM h4u_demo_app;
+        END IF; END $$;
         REVOKE ALL ON demo_environment,schema_migrations FROM h4u_demo_app;
         GRANT SELECT ON demo_environment,schema_migrations TO h4u_demo_app;''')
 
@@ -89,6 +92,10 @@ def upgrade_demo_schema(expected):
         raise RuntimeError('Demo migration checksum mismatch')
     missing=sorted(set(expected)-set(current))
     if not missing: return
+    if missing == ['010_entity_source_evidence.sql']:
+        from scripts.apply_source_evidence import run_demo
+        run_demo(persist=True)
+        return
     reviewed = ['008_commercial_lifecycle.sql', '009_catalog_integrity.sql']
     if not missing or missing != [name for name in reviewed if name in missing]:
         raise RuntimeError('No reviewed incremental upgrade for this schema')

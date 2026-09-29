@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 from psycopg.pq import TransactionStatus
 from pipelines.validate_entities import HotelInput,validate_record,identity_text,normalize_url
+from pipelines.provenance import classify
 
 FIELDS=('code','name','category','address','latitude','longitude','phone','website','google_place_id','zone','status')
 UNVERIFIED={None,'','WEB_DISCOVERED_NEEDS_FIELD_VALIDATION','WEB_DISCOVERED_UNVALIDATED','unverified'}
@@ -24,7 +25,7 @@ def preview(records, state):
     counts=Counter(k for group in keys for k in group)
     output=[]
     for index,(item,errors) in enumerate(parsed):
-        result={'index':index,'action':'REJECT','reasons':[]}
+        result={'index':index,'action':'REJECT','reasons':[], 'provenance_action':'REVIEW', 'provenance_reasons':[]}
         output.append(result)
         if errors:
             result['reasons']=errors;continue
@@ -35,12 +36,7 @@ def preview(records, state):
         if destination is None or source is None:
             result['reasons']=['destination_missing_or_inactive' if destination is None else 'source_missing_or_inactive'];continue
         if item.source is not None and item.source!=source['name']:
-            result['reasons']=['source_name_mismatch'];continue
-        # Conservative: an alternate evidence page needs manual review, not inferred equivalence.
-        try: source_matches=normalize_url(source['url'])==item.source_url
-        except (ValueError,TypeError): source_matches=False
-        if not source_matches:
-            result.update(action='CONFLICT',reasons=['source_url_requires_review']);continue
+            result['reasons']=['source_name_mismatch'];result['provenance_action']='CONFLICT';continue
         candidates=[]
         strong=[]
         for h in state['hotels']:
@@ -53,7 +49,11 @@ def preview(records, state):
         result['provenance']={'source_id':item.source_id,'entity_type':'hotel','source_url':item.source_url,'evidence':item.metadata.note,'operation':'review_required'}
         if len(candidates)>1:
             result.update(action='CONFLICT',reasons=['ambiguous_identity']);continue
+        if item.destination == 'PARACAS' and item.code in {'HOT053','HOT071','HOT065'}:
+            result.update(action='CONFLICT',reasons=['historical_identity_pending_review']);continue
         if not candidates:
+            result['provenance_action'], reason = classify(item,source,[],[])
+            result['provenance_reasons']=[reason]
             result.update(action='CREATE',reasons=['no_matching_hotel']);continue
         hotel=candidates[0]
         result['entity_id']=hotel['id']
@@ -69,25 +69,26 @@ def preview(records, state):
             if existing!=incoming:changes[field]={'existing':existing,'incoming':incoming}
         result['changes']=changes
         links=[l for l in state['links'] if l['source_id']==item.source_id and l['entity_id']==hotel['id']]
-        provenance_conflict=len(links)>1
-        for link in links:
-            # Preserve historical NULLs; never assume the source URL was the original evidence.
-            try:equal=normalize_url(link['source_url'])==item.source_url
-            except (ValueError,TypeError):equal=False
-            if not equal or (link.get('notes') is not None and link['notes']!=item.metadata.note):
-                provenance_conflict=True
-        result['provenance']['operation']='unchanged' if links and not provenance_conflict else 'review_required'
+        result['provenance_action'], reason = classify(item,source,links,state.get('evidence',[]))
+        result['provenance_reasons']=[reason]
         protected=hotel.get('verification_status') not in UNVERIFIED or bool(hotel.get('confidence_score')) or bool(hotel.get('last_verified_at')) or any(l.get('verification_status') for l in state['links'] if l['entity_id']==hotel['id'])
-        if provenance_conflict:
-            result.update(action='CONFLICT',reasons=['existing_provenance_requires_review'])
-        elif changes and (protected or 'code' in changes or ('google_place_id' in changes and hotel.get('google_place_id'))):
-            result.update(action='CONFLICT',reasons=['protected_hotel_or_identity_change'])
+        hotel_links={l.get('id') for l in state['links'] if l['entity_id']==hotel['id']}
+        protected = protected or any(e.get('verification_status') == 'verified' for e in state.get('evidence',[]) if e['entity_source_id'] in hotel_links)
+        if changes and (protected or 'code' in changes or ('google_place_id' in changes and hotel.get('google_place_id'))):
+            result.update(action='CONFLICT',reasons=['protected_hotel_or_identity_change'],provenance_action='CONFLICT')
+            result['provenance_reasons']=['protected_hotel_or_identity_change']
         elif changes:
             result.update(action='UPDATE',reasons=['unverified_hotel_changes'])
         else:
             result.update(action='UNCHANGED',reasons=['catalog_fields_identical'])
+    for result in output:
+        result['catalog_action']=result['action']  # Backward-compatible alias.
+        if result['action']=='CONFLICT' and result['provenance_action']=='REVIEW':
+            result['provenance_reasons'].append('catalog_identity_requires_review')
+        if 'provenance' in result:
+            result['provenance']['operation']={'UNCHANGED':'unchanged','ADD':'add','REVIEW':'review_required','CONFLICT':'conflict'}[result['provenance_action']]
     summary={'total':len(output),**{action.lower():sum(r['action']==action for r in output) for action in ('CREATE','UPDATE','UNCHANGED','CONFLICT','REJECT')}}
-    return {'mode':'preview','summary':summary,'records':output}
+    return {'mode':'preview','summary':summary,'provenance_summary':{a.lower():sum(r['provenance_action']==a for r in output) for a in ('UNCHANGED','ADD','REVIEW','CONFLICT')},'records':output}
 
 
 def inspect(conn,records):
@@ -101,6 +102,8 @@ def inspect(conn,records):
                'sources':rows('SELECT jsonb_build_object(\'id\',id,\'name\',name,\'url\',url,\'status\',status) FROM data_sources ORDER BY id'),
                'hotels':rows('SELECT to_jsonb(h) FROM hotels h ORDER BY id'),
                'links':rows("SELECT to_jsonb(e) FROM entity_sources e WHERE entity_type='hotel' ORDER BY id")}
+        if conn.execute("SELECT to_regclass('entity_source_evidence')").fetchone()[0] is not None:
+            state['evidence']=rows("SELECT to_jsonb(e) FROM entity_source_evidence e JOIN entity_sources s ON s.id=e.entity_source_id WHERE s.entity_type='hotel' ORDER BY e.id")
         return preview(records,state)
 
 

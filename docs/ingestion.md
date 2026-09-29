@@ -773,22 +773,71 @@ homónimas requieren revisión. No hay fuzzy matching ni geografía como evidenc
 URLs: sólo HTTP(S), sin credenciales; normaliza esquema/host, puerto por defecto y
 ruta vacía. Conserva path, query y fragmento; no elimina parámetros ni transforma
 http en https. Es normalización sintáctica, no prueba de equivalencia de fuentes.
-La URL entrante debe corresponder a la registrada en data_sources. URLs alternas,
-NULL históricos y notas existentes distintas se señalan para revisión; no se
-invoca normalize_provenance_urls ni reconcile_sources porque ambos ensayan escrituras.
-Se respeta la clave 009 (source_id,entity_type,entity_id); no se genera provenance
-ni se afirma que una nota entrante esté verificada. No se modifica block_5a.json.
+El preview separa `catalog_action` y `provenance_action`; `action` y `summary`
+se conservan como alias/resumen del catálogo. `provenance_summary` resume las
+acciones de evidencia. `ADD` es una propuesta sin escritura ni verificación humana.
 
-No hay migraciones. Para futura aplicación habrá que autorizar política de escritura,
-almacenamiento de referencias externas/metadata y verificación de evidencia. El
-preview no es una promesa de que un lote pueda aplicarse sin esa revisión.
+- Evidencia idéntica: UNCHANGED. Compara URL normalizada, referencia, nota,
+  fecha de observación y metadata, sin inferir equivalencia semántica de textos.
+- Nueva evidencia con fuente resuelta y URL ya vinculada a ella: ADD si no hay
+  contradicciones estructuradas. Las notas distintas no son por sí mismas conflicto.
+- URL alternativa, URL legacy ausente o documento conocido con observación distinta:
+  REVIEW. Una URL diferente no prueba contradicción ni equivalencia.
+- Dato protegido/identidad contradictoria o evidencia ya rechazada: CONFLICT.
+  Fuente inexistente/inactiva o nombre de fuente incompatible: catálogo REJECT.
+- No se interpreta lenguaje natural para certificar compatibilidad: ADD no implica
+  que todas las afirmaciones de una nota estén comprobadas. Revisión humana pendiente.
+
+Los códigos históricos PARACAS HOT053, HOT071 y HOT065 permanecen en revisión;
+no generan CREATE ni un merge inferido. No se modifica block_5a.json ni se ejecutan
+reconcile_sources/normalize_provenance_urls desde el preview.
+
+### Evidencias acumulativas — migración 010
+
+`entity_sources` conserva su UNIQUE y todos sus campos legacy, sin backfill ni
+reescritura. `entity_source_evidence` añade observaciones independientes con FK
+RESTRICT al vínculo, URL/referencia documental, nota, observed_at nullable,
+verification_status, verified_at, metadata JSONB, fingerprint y created_at.
+Se exige URL o referencia; no se inventa una fecha a partir del momento de ingesta.
+`metadata.observed_at` admite ISO-8601 con zona y se normaliza a UTC en el contrato.
+Descripción y estrellas pueden conservarse en metadata de evidencia, sin promoverse
+al catálogo ni usarse como identidad. El identificador externo continúa sin matching
+persistente automático.
+
+Fingerprint SHA-256 calculado por PostgreSQL sobre URL, referencia, nota, instante
+UTC y metadata; UNIQUE(entity_source_id,fingerprint) impide duplicados exactos aun
+con otra clave enviada por el cliente. No incluye fecha de ingesta ni verificación.
+Normalizar URLs sigue siendo responsabilidad del contrato antes de cualquier futura
+escritura; SQL deduplica el contenido almacenado exacto, no URLs semánticamente iguales.
+
+Las observaciones son append-only: triggers rechazan UPDATE/DELETE y FK impide
+borrar su vínculo padre. No existe updated_at porque no hay actualizaciones.
+Una futura revisión de una observación necesitará eventos de revisión separados;
+no se habilita editar el estado de una observación ya guardada en este bloque.
+Los campos legacy siguen siendo evidencia legible; no se copian a la tabla hija
+para evitar inventar referencias o fechas. El preview funciona tanto antes como
+después de aplicar 010, leyendo también los hijos cuando existen.
+
+010 aplicada el 2026-09-28 primero a demo persistente y después a H4U local,
+mediante `python -m scripts.apply_source_evidence --demo --apply` y
+`python -m scripts.apply_source_evidence --apply`. Sin --apply sólo ensaya y revierte.
+Cada despliegue comprueba prerrequisitos/checksums, bloqueo transaccional, rollback,
+constraints, función/trigger y fingerprints de los cinco catálogos antes de confirmar.
+El upgrade oficial `setup_demo.upgrade_demo_schema` delega el paso 009→010 al mismo
+ejecutor; no reconstruye la base. Runtime demo recibe SELECT/INSERT, sin
+UPDATE/DELETE/TRUNCATE; configure_runtime conserva esa restricción.
+Checksum registrado en ambas bases:
+`05868d0c95a569da8efd829e3a60d0a5dc55fa754a51e3c35c712a7718354ac0`.
+Los fingerprints permanecieron idénticos y la auditoría demo terminó EXIT=0.
+La tabla hija queda vacía: no se cargaron las 12 propuestas ADD ni se realizaron merges.
+No se ha construido apply de catálogos/evidencias.
 
 Las pruebas usan snapshots ficticios, sin Internet; una prueba del adaptador verifica
 transaction_read_only=on mediante lectura de PostgreSQL, sin insertar fixtures reales.
 El lote mixto ficticio devuelve total=5, create=1, update=1, unchanged=1,
 conflict=1, reject=1 y el resultado es idéntico al repetirlo.
 
-Validación: específicas **27 passed in 0.98s**; suite completa ejecutada una sola
+Validación del checkpoint anterior: específicas **27 passed in 0.98s**; suite completa ejecutada una sola
 vez, **479 passed, 1 warning in 133.97s** (urllib3/LibreSSL conocido).
 Compilación y git diff --check correctos. Sin nuevas dependencias, migraciones,
 credenciales externas ni escrituras de catálogo en h4u. Sin commit ni push.

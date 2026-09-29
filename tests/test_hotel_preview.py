@@ -65,10 +65,12 @@ def test_destination_conflict():
     assert action(record(),catalog)=='CONFLICT'
 
 
-def test_provenance_null_preserved_as_conflict():
+def test_provenance_null_preserved_for_review():
     catalog=state(True)
     catalog['links']=[dict(source_id=SOURCE,entity_id=HOTEL,source_url=None)]
-    assert action(record(),catalog)=='CONFLICT'
+    result=preview([record()],catalog)['records'][0]
+    assert result['catalog_action']=='UNCHANGED' and result['provenance_action']=='REVIEW'
+    assert catalog['links'][0]['source_url'] is None
 
 
 def test_metadata_does_not_become_catalog_fields():
@@ -97,7 +99,10 @@ def test_confidence_alone_protects_hotel():
 def test_existing_evidence_cannot_be_replaced():
     catalog=state(True)
     catalog['links']=[dict(source_id=SOURCE,entity_id=HOTEL,source_url='https://example.invalid/',notes='Earlier reviewed evidence')]
-    assert action(record(),catalog)=='CONFLICT'
+    before=deepcopy(catalog)
+    result=preview([record()],catalog)['records'][0]
+    assert result['catalog_action']=='UNCHANGED' and result['provenance_action']=='ADD'
+    assert catalog==before
 
 
 def test_valid_coordinates_and_phone():

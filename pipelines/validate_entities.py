@@ -1,4 +1,5 @@
 """Reusable, offline input validation and conservative identity helpers."""
+from datetime import datetime, timezone
 import math
 import re
 import unicodedata
@@ -36,6 +37,18 @@ class Evidence(BaseModel):
     model_config=ConfigDict(extra='forbid',strict=True,str_strip_whitespace=True)
     note: str=Field(min_length=1,max_length=4000)
     source_reference: Optional[str]=Field(default=None,min_length=1,max_length=500)
+    observed_at: Optional[str]=None
+
+    @field_validator("observed_at")
+    @classmethod
+    def observation_time(cls,value):
+        if value is None:
+            return value
+        parsed=datetime.fromisoformat(value.replace("Z","+00:00"))
+        if parsed.tzinfo is None:
+            raise ValueError("Observation time requires timezone")
+        return parsed.astimezone(timezone.utc).isoformat()
+
     description: Optional[str]=Field(default=None,max_length=10000)
     stars: Optional[int]=Field(default=None,ge=1,le=5)
 
