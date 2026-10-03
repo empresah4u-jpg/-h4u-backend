@@ -20,6 +20,7 @@ from app.routers.admin import router as admin_router
 from app.routers.partners import router as partners_router
 from app.routers.hotels import router as hotels_router
 from app.routers.restaurants import router as restaurants_router
+from app.routers.experiences import router as experiences_router
 from app.routers.tours import router as tours_router
 from app.routers.tour_operators import router as tour_operators_router
 from app.routers.attractions import router as attractions_router
@@ -148,6 +149,7 @@ app.include_router(whatsapp_router)
 app.include_router(hotels_router)
 app.include_router(restaurants_router)
 app.include_router(tours_router)
+app.include_router(experiences_router)
 app.include_router(tour_operators_router)
 app.include_router(attractions_router)
 app.include_router(transport_router)

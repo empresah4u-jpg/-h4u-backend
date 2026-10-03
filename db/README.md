@@ -174,3 +174,11 @@ Ejecutor: `python -m scripts.apply_ingestion_migration` (ensayo por defecto);
 El lock de evidencias usa una función SECURITY DEFINER limitada; runtime conserva
 SELECT/INSERT sobre evidencias, sin EXECUTE para PUBLIC.
 Véase [ingestion_apply](../docs/ingestion_apply.md) para permisos, límites y pruebas.
+
+### 012 — Editorial experience to commercial products
+
+`012_experience_products.sql` adds an empty association table with destination-safe
+FKs and publication status. No catalog/product provisioning is performed.
+Official entry point: `python -m scripts.apply_experience_products` (rollback only);
+`--apply` persists, `--demo` targets the isolated demo. See
+[read API and deployment contract](../docs/experience_commercial_options.md).

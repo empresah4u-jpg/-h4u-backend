@@ -5,6 +5,7 @@ from uuid import UUID
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
+from app.services.commercial_eligibility import product_accepts_requests, ELIGIBLE_REQUEST_PARTNER_SQL
 from app.db import get_connection
 from app.auth import authorize, recheck_owner
 
@@ -124,10 +125,7 @@ def create_service_request(payload: ServiceRequestCreate):
             # 3. Reglas comerciales del producto.
             # En producción solo se permiten productos activos.
             if not payload.simulation:
-                if (
-                    product[3] != "active"
-                    or not product[4]
-                ):
+                if not product_accepts_requests(product[3], product[4]):
                     raise HTTPException(
                         status_code=409,
                         detail=(
@@ -167,7 +165,7 @@ def create_service_request(payload: ServiceRequestCreate):
                 # Producción:
                 # solamente partners comercialmente habilitados.
                 cur.execute(
-                    """
+                    f"""
                     SELECT
                         pp.id,
                         pp.partner_id,
@@ -179,9 +177,7 @@ def create_service_request(payload: ServiceRequestCreate):
                     JOIN partners p
                         ON p.id = pp.partner_id
                     WHERE pp.product_id = %s
-                      AND pp.status = 'active'
-                      AND p.status = 'active'
-                      AND p.reservations_enabled = true
+                      AND {ELIGIBLE_REQUEST_PARTNER_SQL}
                     ORDER BY
                         pp.priority DESC,
                         p.business_name

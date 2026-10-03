@@ -19,3 +19,13 @@ def require_bookable_candidate(cur, candidate_id):
     product = cur.fetchone()
     if not product or product[0] != 'active' or product[1] != 'active' or not product[2]:
         raise HTTPException(409, 'El producto o su vínculo comercial no admite reservas.')
+
+
+# Shared request admission predicates. Aliases pp=product_partners, p=partners.
+# Do not include rates, financial configuration or private partner data in public output.
+ELIGIBLE_REQUEST_PARTNER_SQL = """pp.status = 'active'
+    AND p.status = 'active' AND p.reservations_enabled = true"""
+
+
+def product_accepts_requests(status, reservations_enabled):
+    return status == 'active' and reservations_enabled is True
