@@ -17,16 +17,18 @@ from app.db import get_connection
 from app.routers import service_requests as sr, partner_responses as pr, reservations as r
 from app.routers import passengers as ps, payments as p, commissions as c, settlements as st, refunds as rf
 from app.routers import lifecycle as api
-from tests.test_commercial import request, reserve, passenger, payment
+from tests.test_commercial import request, reserve, passenger, payment, consent
 
 
 @pytest.fixture
 def demo_flow(monkeypatch):
     with patch.dict(os.environ,clear=False):
-        configure()
+        disposable = os.getenv('DB_NAME','').startswith('h4u_ingestion_test_')
+        if not disposable:
+            pytest.fail('Use scripts.test_ingestion_isolated; committed races require a disposable DB',pytrace=False)
         token=uuid4().hex[:12]
         with get_connection() as conn:
-            verify(conn)
+            assert conn.execute('SELECT current_database()').fetchone()[0].startswith('h4u_ingestion_test_')
             destination=conn.execute("INSERT INTO destinations(code,name,slug) VALUES (%s,'Concurrency DEMO',%s) RETURNING id",('RACE-'+token,'race-'+token)).fetchone()[0]
             traveler=conn.execute('INSERT INTO travelers DEFAULT VALUES RETURNING id').fetchone()[0]
             session=conn.execute("INSERT INTO sessions(traveler_id,destination_id,channel) VALUES (%s,%s,'demo') RETURNING id",(traveler,destination)).fetchone()[0]
@@ -37,7 +39,7 @@ def demo_flow(monkeypatch):
         @contextmanager
         def connection():
             with get_connection() as conn:
-                verify(conn)
+                assert conn.execute('SELECT current_database()').fetchone()[0].startswith('h4u_ingestion_test_')
                 conn.execute("SET lock_timeout='5s'")
                 conn.execute("SET statement_timeout='10s'")
                 connections.add(conn.info.backend_pid)
@@ -73,7 +75,7 @@ def test_last_capacity_has_exactly_one_winner(demo_flow):
     codes=[]
     for _ in range(2):
         req=sr.create_service_request(sr.ServiceRequestCreate(session_id=f['session'],product_id=f['product'],service_date=date.today()+timedelta(days=7),preferred_time=time(10),passenger_count=1,adults_count=1,minors_count=0))
-        pr.respond_to_request(pr.PartnerResponseCreate(request_partner_id=req['candidates'][0]['request_partner_id'],action='accept'))
+        consent(f, req['candidates'][0]['request_partner_id'])
         codes.append(req['code'])
     before=set(f['connections'])
     result=pair(lambda:r.create_reservation(r.ReservationCreate(service_request_code=codes[0])),lambda:r.create_reservation(r.ReservationCreate(service_request_code=codes[1])))
@@ -86,7 +88,7 @@ def test_last_capacity_has_exactly_one_winner(demo_flow):
 
 def test_duplicate_reservation_and_payment_race(demo_flow):
     f=demo_flow; req=request(f)
-    pr.respond_to_request(pr.PartnerResponseCreate(request_partner_id=req['candidates'][0]['request_partner_id'],action='accept'))
+    consent(f, req['candidates'][0]['request_partner_id'])
     create=lambda:r.create_reservation(r.ReservationCreate(service_request_code=req['code']))
     results=pair(create,create)
     assert sum(x[0]=='ok' for x in results)==1

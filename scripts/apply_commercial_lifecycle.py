@@ -48,7 +48,7 @@ def main():
         upgrade_demo_schema(expected_migrations())
         print('008 demo dry-run, rollback, application and checksums verified')
         return
-    from app.db import get_connection
+    from app.db import get_admin_connection as get_connection
     with get_connection() as conn:
         dry_run(conn)
         print('008 dry-run and rollback verified')

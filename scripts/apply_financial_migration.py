@@ -1,7 +1,7 @@
 """Apply only reviewed additive migration 002, atomically and with checksum tracking."""
 from hashlib import sha256
 from pathlib import Path
-from app.db import get_connection
+from app.db import get_admin_connection as get_connection
 
 MIGRATION = Path(__file__).resolve().parents[1] / 'db/migrations/002_financial_adjustments.sql'
 

@@ -1,6 +1,6 @@
 """Explicit 006 runner: atomic, checksum-protected, no startup migrations."""
 from hashlib import sha256
-from app.db import get_connection
+from app.db import get_admin_connection as get_connection
 from scripts.apply_partner_memberships import ROOT
 
 NAME = '006_admin_audit.sql'

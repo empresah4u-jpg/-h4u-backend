@@ -1,3 +1,4 @@
+from tests.test_commercial import consent
 from datetime import date, timedelta, time
 from decimal import Decimal
 
@@ -168,7 +169,7 @@ def test_slot_release_on_expiration_and_outbox_idempotence(lifecycle):
     f=lifecycle
     slot=api.configure_slot(api.SlotCreate(product_id=f['product'],partner_id=f['partner'],service_date=date.today()+timedelta(days=7),service_time=time(10),capacity=2))
     req=sr.create_service_request(sr.ServiceRequestCreate(session_id=f['session'],product_id=f['product'],service_date=date.today()+timedelta(days=7),preferred_time=time(10),passenger_count=2,adults_count=2,minors_count=0))
-    pr.respond_to_request(pr.PartnerResponseCreate(request_partner_id=req['candidates'][0]['request_partner_id'],action='accept'))
+    consent(f, req['candidates'][0]['request_partner_id'])
     res=reservations.create_reservation(reservations.ReservationCreate(service_request_code=req['code']))
     db=f['conn']; assert db.execute('SELECT reserved FROM commercial_slots WHERE id=%s',(slot['id'],)).fetchone()==(2,)
     db.execute("UPDATE reservations SET expires_at=clock_timestamp()-interval '1 second' WHERE id=%s",(res['id'],))

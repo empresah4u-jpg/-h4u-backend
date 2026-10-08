@@ -91,6 +91,10 @@ def configure_runtime(password):
             REVOKE ALL ON experience_products FROM h4u_demo_app;
             GRANT SELECT ON experience_products TO h4u_demo_app;
         END IF; END $$;
+        DO $$ BEGIN IF to_regclass('public.request_offer_consents') IS NOT NULL THEN
+            REVOKE ALL ON request_offer_consents FROM h4u_demo_app;
+            GRANT SELECT,INSERT ON request_offer_consents TO h4u_demo_app;
+        END IF; END $$;
         REVOKE ALL ON demo_environment,schema_migrations FROM h4u_demo_app;
         GRANT SELECT ON demo_environment,schema_migrations TO h4u_demo_app;''')
 
@@ -103,6 +107,10 @@ def upgrade_demo_schema(expected):
         raise RuntimeError('Demo migration checksum mismatch')
     missing=sorted(set(expected)-set(current))
     if not missing: return
+    if missing == ['013_offer_consent.sql']:
+        from scripts.apply_offer_consent import run_demo
+        run_demo(persist=True)
+        return
     if missing == ['012_experience_products.sql']:
         from scripts.apply_experience_products import run_demo
         run_demo(persist=True)

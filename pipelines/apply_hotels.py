@@ -80,7 +80,7 @@ def main():
     mode.add_argument('--dry-run',action='store_true')
     mode.add_argument('--apply',action='store_true')
     args=parser.parse_args()
-    from app.db import get_connection
+    from app.db import get_admin_connection as get_connection
     with get_connection() as conn:
         result=apply(conn,json.loads(args.plan.read_text()),dry_run=not args.apply)
     print(json.dumps(result,ensure_ascii=False,indent=2))

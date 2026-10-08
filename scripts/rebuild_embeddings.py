@@ -1,5 +1,5 @@
 import argparse
-from app.db import get_connection
+from app.db import get_admin_connection as get_connection
 from app.embeddings import MODEL_NAME, get_model, vector_to_pg, check_storage
 
 

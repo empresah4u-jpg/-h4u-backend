@@ -1,4 +1,5 @@
 """HTTP/JWT integration against rollback fixtures, never real identities."""
+from tests.test_commercial import consent
 from datetime import date, timedelta
 from uuid import uuid4
 
@@ -35,7 +36,7 @@ def test_stale_candidate_revalidates_admission(identity_case, action, disabled):
         t['db'].execute('UPDATE products SET reservations_enabled=false WHERE id=%s', (t['flow']['product'],))
     response = t['client'].post('/partner-responses', headers=bearer(t), json={
         'request_partner_id': req['candidates'][0]['request_partner_id'],
-        'action': action, 'partner_message': 'test'})
+        'action': action, 'partner_message': 'test', 'proposed_price':100, 'proposed_currency':'PEN'})
     assert response.status_code == 409
     assert t['db'].execute('SELECT assigned_partner_id,status FROM service_requests WHERE code=%s', (req['code'],)).fetchone() == (None, 'searching')
 
@@ -44,7 +45,7 @@ def test_stale_candidate_revalidates_admission(identity_case, action, disabled):
 def test_reservation_revalidates_winning_partner(identity_case, disabled):
     t = identity_case
     req = request(t['flow'])
-    pr.respond_to_request(pr.PartnerResponseCreate(request_partner_id=req['candidates'][0]['request_partner_id'], action='accept'))
+    consent(t['flow'], req['candidates'][0]['request_partner_id'])
     if disabled == 'status':
         t['db'].execute("UPDATE partners SET status='suspended' WHERE id=%s", (t['flow']['partner'],))
     elif disabled == 'reservations':
@@ -172,7 +173,7 @@ def test_foreign_partner_cannot_mutate_other_business(identity_case, operation):
     auth = bearer(t, foreign=True)
     if operation == 'reserve':
         req = request(t['flow'])
-        pr.respond_to_request(pr.PartnerResponseCreate(request_partner_id=req['candidates'][0]['request_partner_id'], action='accept'))
+        consent(t['flow'], req['candidates'][0]['request_partner_id'])
         path, body = '/reservations', {'service_request_code': req['code']}
     else:
         res = reserve(t['flow'])

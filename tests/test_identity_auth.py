@@ -1,4 +1,5 @@
 """Real JWT/Argon2/PostgreSQL; ephemeral credentials and rollback-only user fixtures."""
+import os
 import asyncio
 from datetime import datetime, timezone
 import secrets
@@ -27,14 +28,15 @@ def identity_case(flow, monkeypatch):
     db = flow['conn']
     # Shadow identity tables on this rollback-only connection. Never copy real
     # users, hashes, sessions or throttle buckets; all API connections use its proxy.
-    for table in ('users', 'auth_sessions', 'auth_login_limits', 'partner_memberships', 'partner_events', 'admin_events'):
-        db.execute(f'CREATE TEMP TABLE {table} (LIKE public.{table} INCLUDING ALL) ON COMMIT DROP')
-    db.execute('ALTER TABLE pg_temp.auth_sessions ADD FOREIGN KEY (user_id) REFERENCES pg_temp.users(id)')
-    for table in ('users', 'partner_memberships', 'partner_events', 'admin_events'):
-        triggers = db.execute("SELECT pg_get_triggerdef(oid) FROM pg_trigger WHERE tgrelid=%s::regclass AND NOT tgisinternal", ('public.'+table,)).fetchall()
-        for (definition,) in triggers:
-            db.execute(definition.replace(' ON public.'+table+' ', ' ON pg_temp.'+table+' '))
-    assert db.execute("SELECT 'users'::regclass::oid <> 'public.users'::regclass::oid").fetchone()[0]
+    if not os.getenv('DB_NAME', '').startswith('h4u_ingestion_test_'):
+        for table in ('users', 'auth_sessions', 'auth_login_limits', 'partner_memberships', 'partner_events', 'admin_events'):
+            db.execute(f'CREATE TEMP TABLE {table} (LIKE public.{table} INCLUDING ALL) ON COMMIT DROP')
+        db.execute('ALTER TABLE pg_temp.auth_sessions ADD FOREIGN KEY (user_id) REFERENCES pg_temp.users(id)')
+        for table in ('users', 'partner_memberships', 'partner_events', 'admin_events'):
+            triggers = db.execute("SELECT pg_get_triggerdef(oid) FROM pg_trigger WHERE tgrelid=%s::regclass AND NOT tgisinternal", ('public.'+table,)).fetchall()
+            for (definition,) in triggers:
+                db.execute(definition.replace(' ON public.'+table+' ', ' ON pg_temp.'+table+' '))
+        assert db.execute("SELECT 'users'::regclass::oid <> 'public.users'::regclass::oid").fetchone()[0]
     for module in (identity, service_module, auth, partner_router, membership_service, admin_router, admin_service):
         monkeypatch.setattr(module, 'get_connection', reservations.get_connection)
     # Never inspect or reuse the production JWT secret in tests.
@@ -51,9 +53,17 @@ def identity_case(flow, monkeypatch):
         if role == 'tourist':
             traveler_id = owner or db.execute('SELECT traveler_id FROM sessions WHERE id=%s', (flow['session'],)).fetchone()[0]
         hashed = stored_hash or hash_password(value)
-        uid = db.execute('''INSERT INTO users(email,password_hash,role,status,traveler_id,partner_id)
-            VALUES (%s,%s,%s,%s,%s,%s) RETURNING id''',
-            (email, hashed, role, status, traveler_id, partner_id)).fetchone()[0]
+        # A commercial fixture may already have created this fictitious tourist
+        # without login credentials. Give that same test identity its test login.
+        existing = None
+        if role == 'tourist':
+            existing = db.execute("UPDATE users SET email=%s,password_hash=%s,status=%s WHERE traveler_id=%s AND password_hash='not-a-login-credential' RETURNING id", (email,hashed,status,traveler_id)).fetchone()
+        if existing:
+            uid = existing[0]
+        else:
+            uid = db.execute('''INSERT INTO users(email,password_hash,role,status,traveler_id,partner_id)
+                VALUES (%s,%s,%s,%s,%s,%s) RETURNING id''',
+                (email, hashed, role, status, traveler_id, partner_id)).fetchone()[0]
         if role == 'partner' and membership:
             db.execute('INSERT INTO partner_memberships(partner_id,user_id,membership_role,status) VALUES (%s,%s,%s,%s)',
                        (partner_id,uid,membership_role,membership_status))
@@ -294,15 +304,16 @@ def test_invalid_auth_input_does_not_echo_password(identity_case):
 
 def test_throttling_persists_failed_attempts_without_plaintext(identity_case):
     t = identity_case
+    before = {row[0] for row in t['db'].execute('SELECT key_hash FROM auth_login_limits')}
     user = t['user']()
     for _ in range(10):
         assert t['login'](user, password=secrets.token_urlsafe(24)).status_code == 401
     response = t['login'](user)
     assert response.status_code == 429 and response.headers['retry-after'] == '600'
-    rows = t['db'].execute('SELECT key_hash,attempts FROM auth_login_limits').fetchall()
+    rows = [row for row in t['db'].execute('SELECT key_hash,attempts FROM auth_login_limits') if row[0] not in before]
     assert len(rows) == 2 and all(len(row[0]) == 64 for row in rows)
     assert all(user['email'] not in row[0] for row in rows)
-    t['db'].execute("UPDATE auth_login_limits SET window_started_at=clock_timestamp()-INTERVAL '11 minutes'")
+    t['db'].execute("UPDATE auth_login_limits SET window_started_at=clock_timestamp()-INTERVAL '11 minutes' WHERE key_hash=ANY(%s)", ([row[0] for row in rows],))
     assert t['login'](user).status_code == 200
 
 

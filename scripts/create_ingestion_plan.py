@@ -2,7 +2,7 @@
 import argparse
 import json
 from pathlib import Path
-from app.db import get_connection
+from app.db import get_admin_connection as get_connection
 from pipelines.ingestion_plan import create
 
 

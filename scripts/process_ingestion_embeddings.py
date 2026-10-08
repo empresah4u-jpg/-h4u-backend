@@ -43,7 +43,7 @@ def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--run',action='store_true',help='Explicitly process one pending/retryable job')
     args=parser.parse_args()
-    from app.db import get_connection
+    from app.db import get_admin_connection as get_connection
     with get_connection() as conn:
         if args.run:
             result=process_one(conn)

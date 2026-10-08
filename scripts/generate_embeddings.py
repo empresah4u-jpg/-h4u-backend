@@ -2,7 +2,7 @@ import hashlib
 
 from app.embeddings import MODEL_NAME, DIMENSIONS, get_model, vector_to_pg, check_storage
 
-from app.db import get_connection
+from app.db import get_admin_connection as get_connection
 
 
 

@@ -1,4 +1,5 @@
 """Membership policy through real JWTs and isolated identity fixtures."""
+from tests.test_commercial import consent
 from uuid import UUID, uuid4
 
 import psycopg
@@ -123,7 +124,8 @@ def test_members_operate_commercial_flow(identity_case, role):
     req = request(t['flow'])
     auth = headers(t['token'](t['user'](membership_role=role)))
     assert t['client'].post('/partner-responses',headers=auth,json={
-        'request_partner_id':req['candidates'][0]['request_partner_id'],'action':'accept'}).status_code == 200
+        'request_partner_id':req['candidates'][0]['request_partner_id'],'action':'counter_offer','proposed_price':100,'proposed_currency':'PEN'}).status_code == 200
+    consent(t['flow'], req['candidates'][0]['request_partner_id'])
     res = t['client'].post('/reservations',headers=auth,json={'service_request_code':req['code']})
     assert res.status_code == 201
     code = res.json()['code']
@@ -216,7 +218,7 @@ def test_reads_filter_actual_records_and_paginate(identity_case):
     other_code = t['db'].execute('SELECT code FROM partners WHERE id=%s',(other,)).fetchone()[0]
     req = request(t['flow'])
     candidate = next(c for c in req['candidates'] if c['partner_code']==other_code)
-    responses.respond_to_request(responses.PartnerResponseCreate(request_partner_id=candidate['request_partner_id'],action='accept'))
+    consent(t['flow'], candidate['request_partner_id'])
     other_res = reservations.create_reservation(reservations.ReservationCreate(service_request_code=req['code']))
     auth = headers(t['token'](t['user']()))
     result = t['client'].get(path(t,'/reservations'),headers=auth).json()['items']
@@ -244,7 +246,8 @@ def test_secondary_membership_authorizes_commercial_resource(identity_case):
     candidate = next(c for c in req['candidates'] if c['partner_code']==other_code)
     auth = headers(t['token'](user))
     assert t['client'].post('/partner-responses',headers=auth,json={
-        'request_partner_id':candidate['request_partner_id'],'action':'accept'}).status_code==200
+        'request_partner_id':candidate['request_partner_id'],'action':'counter_offer','proposed_price':100,'proposed_currency':'PEN'}).status_code==200
+    consent(t['flow'], candidate['request_partner_id'])
     assert t['client'].post('/reservations',headers=auth,json={'service_request_code':req['code']}).status_code==201
 
 

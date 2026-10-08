@@ -1,13 +1,14 @@
-from datetime import datetime, time
+from datetime import time
 from decimal import Decimal
 from typing import Optional
 from uuid import UUID
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.db import get_connection
-from app.auth import authorize, recheck_owner, prelock_partner
+from app.auth import authorize, recheck_owner, prelock_partner, get_current_actor, Principal
+from app.services.offer_consent import require_tourist, existing_consent, record_consent
 from app.services.commercial_eligibility import require_bookable_candidate
 
 
@@ -18,6 +19,7 @@ router = APIRouter(
 
 
 class PartnerResponseCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     request_partner_id: UUID
     action: str
 
@@ -44,37 +46,35 @@ def respond_to_request(payload: PartnerResponseCreate):
 
 class CounterOfferAcceptance(BaseModel):
     model_config = ConfigDict(extra='forbid')
-    expected_version: datetime
-
-    @field_validator('expected_version')
-    @classmethod
-    def timezone_required(cls, value):
-        if value.tzinfo is None:
-            raise ValueError('La versión debe incluir zona horaria.')
-        return value
+    expected_version: int = Field(strict=True, ge=1)
 
 
 @router.get('/{request_partner_id}/counter-offer', dependencies=[authorize('offer.accept')])
 def read_counter_offer(request_partner_id: UUID):
     with get_connection() as conn, conn.cursor() as cur:
         recheck_owner(cur, 'candidate', request_partner_id)
-        cur.execute("""SELECT proposed_price,proposed_currency,proposed_time,partner_message,updated_at
-            FROM request_partners WHERE id=%s AND status='counter_offered'""",(request_partner_id,))
+        cur.execute("""SELECT o.proposed_price,o.proposed_currency,o.proposed_time,o.partner_message,o.offer_version,
+                request_consent_terms(r),o.offer_request_snapshot
+            FROM request_partners o JOIN service_requests r ON r.id=o.service_request_id
+            WHERE o.id=%s AND o.status='counter_offered' AND o.offer_version>0
+              AND o.offer_request_revision=r.terms_revision
+              AND o.offer_request_snapshot=request_consent_terms(r)""",(request_partner_id,))
         row=cur.fetchone()
         if not row:
             raise HTTPException(409,'No hay una contraoferta disponible.')
         if row[0] is None or row[1] is None:
             raise HTTPException(409,'La aceptación del turista requiere precio y moneda explícitos.')
-        return dict(zip(('price','currency','time','message','version'),row))
+        return dict(zip(('price','currency','time','message','version','request_terms','offer_request_terms'),row))
 
 
 @router.post('/{request_partner_id}/accept-counter-offer', dependencies=[authorize('offer.accept')])
-def accept_counter_offer(request_partner_id: UUID, payload: CounterOfferAcceptance):
+def accept_counter_offer(request_partner_id: UUID, payload: CounterOfferAcceptance,
+                         actor: Principal = Depends(get_current_actor)):
     return _respond_to_request(PartnerResponseCreate(request_partner_id=request_partner_id,action='accept'),
-                               expected_offer=payload.expected_version)
+                               expected_offer=payload.expected_version, consent_actor=actor)
 
 
-def _respond_to_request(payload: PartnerResponseCreate, *, expected_offer=None):
+def _respond_to_request(payload: PartnerResponseCreate, *, expected_offer=None, consent_actor=None):
 
     action = payload.action.lower().strip()
 
@@ -84,23 +84,15 @@ def _respond_to_request(payload: PartnerResponseCreate, *, expected_offer=None):
             detail="action debe ser accept, reject o counter_offer.",
         )
 
-    if action == "counter_offer":
-        if (
-            payload.proposed_time is None
-            and payload.proposed_price is None
-            and not payload.partner_message
-        ):
-            raise HTTPException(
-                status_code=400,
-                detail=(
-                    "Una contraoferta debe incluir hora, "
-                    "precio o mensaje."
-                ),
-            )
+    if action == "accept" and expected_offer is None:
+        raise HTTPException(409, 'Sin consentimiento verificable; envíe COUNTER_OFFER.')
+    if action == "counter_offer" and (payload.proposed_price is None or payload.proposed_currency is None):
+        raise HTTPException(422, 'La oferta requiere importe total y moneda explícitos.')
 
     with get_connection() as conn:
         with conn.cursor() as cur:
             if expected_offer is not None:
+                require_tourist(cur, consent_actor)
                 # Keep partner -> request lock order also for tourist acceptance.
                 cur.execute("""SELECT p.id FROM partners p JOIN request_partners rp ON rp.partner_id=p.id
                     WHERE rp.id=%s FOR SHARE OF p""", (payload.request_partner_id,))
@@ -141,12 +133,18 @@ def _respond_to_request(payload: PartnerResponseCreate, *, expected_offer=None):
             # Serializar cualquier respuesta, no solo la aceptación.
             cur.execute("SELECT status, assigned_partner_id FROM service_requests WHERE id = %s FOR UPDATE", (service_request_id,))
             request = cur.fetchone()
+            if expected_offer is not None:
+                consent_id = existing_consent(cur, payload.request_partner_id, consent_actor, expected_offer)
+                if consent_id is not None:
+                    return {"service_request": candidate[4], "partner_code": candidate[5],
+                            "business_name": candidate[6], "action": "accept", "status": "accepted",
+                            "winner": True, "consent_id": str(consent_id), "replayed": True}
             from app.services.commercial_lifecycle import require_unexpired
             require_unexpired(cur, 'service_requests', service_request_id)
             require_unexpired(cur, 'request_partners', payload.request_partner_id)
             if not request or request[0] not in {"searching", "offers_received"} or request[1] is not None:
                 raise HTTPException(409, "La solicitud ya no admite respuestas.")
-            cur.execute("SELECT status,proposed_price,proposed_currency,updated_at FROM request_partners WHERE id = %s FOR UPDATE", (payload.request_partner_id,))
+            cur.execute("SELECT status,proposed_price,proposed_currency,offer_version FROM request_partners WHERE id = %s FOR UPDATE", (payload.request_partner_id,))
             current = cur.fetchone()
             if not current:
                 raise HTTPException(404, "Candidatura no encontrada.")
@@ -157,6 +155,7 @@ def _respond_to_request(payload: PartnerResponseCreate, *, expected_offer=None):
                 if (current[0] != 'counter_offered' or current[1] is None or current[2] is None
                         or current[3] != expected_offer):
                     raise HTTPException(409,'La contraoferta cambió o ya no admite aceptación.')
+                consent_id = record_consent(cur, payload.request_partner_id, consent_actor, expected_offer)
             candidate_status = current[0]
             request_code = candidate[4]
             partner_code = candidate[5]
@@ -213,6 +212,7 @@ def _respond_to_request(payload: PartnerResponseCreate, *, expected_offer=None):
                     UPDATE request_partners
                     SET
                         status = 'counter_offered',
+                        offer_version = offer_version + 1,
                         proposed_time = %s,
                         proposed_price = %s,
                         proposed_currency = %s,
@@ -304,10 +304,6 @@ def _respond_to_request(payload: PartnerResponseCreate, *, expected_offer=None):
                 UPDATE request_partners
                 SET
                     status = 'accepted',
-                    proposed_time = COALESCE(%s, proposed_time),
-                    proposed_price = COALESCE(%s, proposed_price),
-                    proposed_currency = COALESCE(%s, proposed_currency),
-                    partner_message = COALESCE(%s, partner_message),
                     responded_at = now(),
                     accepted_at = now(),
                     is_winner = true,
@@ -322,13 +318,7 @@ def _respond_to_request(payload: PartnerResponseCreate, *, expected_offer=None):
                   AND is_winner = false
                 RETURNING id
                 """,
-                (
-                    payload.proposed_time,
-                    payload.proposed_price,
-                    payload.proposed_currency,
-                    payload.partner_message,
-                    payload.request_partner_id,
-                ),
+                (payload.request_partner_id,),
             )
 
             accepted = cur.fetchone()
@@ -405,4 +395,6 @@ def _respond_to_request(payload: PartnerResponseCreate, *, expected_offer=None):
         "action": "accept",
         "status": "accepted",
         "winner": True,
+        "consent_id": str(consent_id),
+        "replayed": False,
     }

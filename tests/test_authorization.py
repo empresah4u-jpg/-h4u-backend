@@ -62,7 +62,7 @@ def test_partner_cannot_cancel_other_reservation(ownership):
 
 def test_partner_response_ownership(ownership):
     req=request(ownership)
-    body={'request_partner_id':req['candidates'][0]['request_partner_id'],'action':'accept'}
+    body={'request_partner_id':req['candidates'][0]['request_partner_id'],'action':'counter_offer','proposed_price':100,'proposed_currency':'PEN'}
     with as_actor(auth.Principal(subject='other',role='partner',partner_id=uuid4())) as client:
         assert client.post('/partner-responses',json=body).status_code==403
     with as_actor(auth.Principal(subject=str(ownership['partner_user']),role='partner',partner_id=ownership['partner'])) as client:

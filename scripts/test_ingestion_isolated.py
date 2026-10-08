@@ -64,6 +64,9 @@ def main():
             sql('postgres',f'DROP ROLE {runtime};')
         if created_role:
             sql('postgres',f'DROP ROLE {role};')
+        remaining=sql('postgres',f"SELECT (SELECT count(*) FROM pg_database WHERE datname='{database}')+(SELECT count(*) FROM pg_roles WHERE rolname IN ('{role}','{runtime}'));")
+        if remaining!='0':raise RuntimeError('Disposable test cleanup incomplete')
+        print('Disposable test database and roles removed: verified')
 
 
 if __name__=='__main__': raise SystemExit(main())

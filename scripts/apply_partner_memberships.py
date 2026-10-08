@@ -1,7 +1,7 @@
 """Explicit atomic migration, checksum-protected; never changes an applied file."""
 from hashlib import sha256
 from pathlib import Path
-from app.db import get_connection
+from app.db import get_admin_connection as get_connection
 
 ROOT = Path(__file__).resolve().parents[1] / 'db/migrations'
 NAME = '005_partner_memberships.sql'

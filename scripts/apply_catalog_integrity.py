@@ -93,7 +93,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--apply', action='store_true')
     args = parser.parse_args()
-    from app.db import get_connection
+    from app.db import get_admin_connection as get_connection
     with get_connection() as conn:
         conn.autocommit = True
         run(conn,args.apply)

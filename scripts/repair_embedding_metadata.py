@@ -2,7 +2,7 @@
 import argparse
 import json
 import numpy as np
-from app.db import get_connection
+from app.db import get_admin_connection as get_connection
 from app.embeddings import MODEL_NAME, get_model, check_storage
 
 

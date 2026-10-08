@@ -75,9 +75,31 @@ def request(flow, count=1):
         adults_count=count, minors_count=0))
 
 
+def consent(flow, candidate):
+    """Publish explicit terms and accept as the persisted synthetic tourist."""
+    from app.auth import Principal
+    if 'conn' not in flow:
+        with get_connection() as db:
+            return consent(dict(flow, conn=db, consent_autocommit=True), candidate)
+    db = flow['conn']
+    traveler = db.execute('SELECT traveler_id FROM sessions WHERE id=%s', (flow['session'],)).fetchone()[0]
+    row = db.execute("SELECT id FROM users WHERE traveler_id=%s AND role='tourist' AND status='active'", (traveler,)).fetchone()
+    user = row[0] if row else db.execute("INSERT INTO users(email,password_hash,role,traveler_id) VALUES (%s,'not-a-login-credential','tourist',%s) RETURNING id", (uuid4().hex+'@example.invalid',traveler)).fetchone()[0]
+    if flow.get('consent_autocommit'):
+        db.commit()
+    # The fictitious partner explicitly quotes its configured test tariff.
+    # Production reservation code still reads only the consent snapshot.
+    price,currency = db.execute('''SELECT pp.partner_price*r.passenger_count,pp.currency
+        FROM request_partners rp JOIN product_partners pp ON pp.id=rp.product_partner_id
+        JOIN service_requests r ON r.id=rp.service_request_id WHERE rp.id=%s''',(candidate,)).fetchone()
+    pr.respond_to_request(pr.PartnerResponseCreate(request_partner_id=candidate, action='counter_offer', proposed_price=price, proposed_currency=currency))
+    version = db.execute('SELECT offer_version FROM request_partners WHERE id=%s', (candidate,)).fetchone()[0]
+    return pr.accept_counter_offer(candidate, pr.CounterOfferAcceptance(expected_version=version), Principal(subject=str(user),role='tourist',traveler_id=traveler))
+
+
 def reserve(flow, count=1):
     req = request(flow, count)
-    pr.respond_to_request(pr.PartnerResponseCreate(request_partner_id=req['candidates'][0]['request_partner_id'], action='accept'))
+    consent(flow, req['candidates'][0]['request_partner_id'])
     return r.create_reservation(r.ReservationCreate(service_request_code=req['code']))
 
 
@@ -202,9 +224,9 @@ def test_invalid_passenger_http(change, admin_http):
 def test_response_after_assignment(flow):
     req=request(flow)
     payload=pr.PartnerResponseCreate(request_partner_id=req['candidates'][0]['request_partner_id'],action='accept')
-    pr.respond_to_request(payload)
+    consent(flow, payload.request_partner_id)
     for action in ('reject','counter_offer'):
-        conflict(pr.respond_to_request,pr.PartnerResponseCreate(request_partner_id=payload.request_partner_id,action=action,partner_message='Audit'))
+        conflict(pr.respond_to_request,pr.PartnerResponseCreate(request_partner_id=payload.request_partner_id,action=action,partner_message='Audit',proposed_price=100,proposed_currency='PEN'))
     assert flow['conn'].execute('SELECT status,is_winner FROM request_partners WHERE id=%s',(payload.request_partner_id,)).fetchone()==('accepted',True)
 
 
@@ -219,8 +241,10 @@ def test_reservation_requires_assignment(flow,status):
 def test_payment_invalid_stored_amount(flow,price):
     res=reserve(flow)
     ps.create_passengers(res['code'],ps.PassengersCreate(passengers=[passenger()]))
-    flow['conn'].execute('UPDATE reservations SET agreed_price=%s WHERE code=%s',(Decimal(price),res['code']))
-    conflict(p.create_payment,p.PaymentCreate(reservation_code=res['code'],payment_method='cash',received_by='partner'))
+    from psycopg.errors import CheckViolation
+    with pytest.raises(CheckViolation), flow['conn'].transaction():
+        flow['conn'].execute('UPDATE reservations SET agreed_price=%s WHERE code=%s',(Decimal(price),res['code']))
+    assert flow['conn'].execute('SELECT agreed_price FROM reservations WHERE code=%s',(res['code'],)).fetchone()==(100,)
 
 
 def test_unpaid_refund_and_commission(flow):

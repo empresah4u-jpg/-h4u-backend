@@ -1,7 +1,7 @@
 """Apply only additive 004 after verifying applied 003; never reruns/edits 003."""
 from hashlib import sha256
 from pathlib import Path
-from app.db import get_connection
+from app.db import get_admin_connection as get_connection
 
 ROOT = Path(__file__).resolve().parents[1] / 'db/migrations'
 

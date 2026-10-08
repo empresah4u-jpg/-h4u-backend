@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 from psycopg import sql
 from psycopg.pq import TransactionStatus
-from app.db import get_connection
+from app.db import get_admin_connection as get_connection
 
 TABLES = {
     'hotel': 'hotels', 'restaurant': 'restaurants', 'attraction': 'attractions',

@@ -85,7 +85,10 @@ def run(scenario='accept', *, exercise_lifecycle=False):
                     call('POST','/partner-responses/'+candidate+'/accept-counter-offer','tourist',{'expected_version':offer['version']})
                     record('tourist_accepts_counter_offer',amount='120.00')
                 else:
-                    call('POST','/partner-responses','partner',{'request_partner_id':candidate,'action':'accept'})
+                    call('POST','/partner-responses','partner',{'request_partner_id':candidate,'action':'counter_offer','proposed_price':'100.00','proposed_currency':'PEN','partner_message':'Oferta DEMO explícita'})
+                    offer=call('GET','/partner-responses/'+candidate+'/counter-offer','tourist')
+                    call('POST','/partner-responses/'+candidate+'/accept-counter-offer','tourist',{'expected_version':offer['version']})
+                    record('tourist_accepts_offer',amount='100.00')
                 record('accepted')
                 reservation=call('POST','/reservations','tourist',{'service_request_code':req['code']},201)
                 record('reservation',code=reservation['code'])

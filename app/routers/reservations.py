@@ -167,15 +167,8 @@ def create_reservation(payload: ReservationCreate):
                 SELECT
                     rp.id,
                     rp.partner_id,
-                    rp.status,
-                    rp.proposed_time,
-                    rp.proposed_price,
-                    rp.proposed_currency,
-                    pp.partner_price,
-                    pp.currency
+                    rp.status
                 FROM request_partners rp
-                LEFT JOIN product_partners pp
-                    ON pp.id = rp.product_partner_id
                 WHERE rp.service_request_id = %s
                   AND rp.is_winner = true
                 """,
@@ -197,12 +190,6 @@ def create_reservation(payload: ReservationCreate):
             require_bookable_candidate(cur, request_partner_id)
             winner_partner_id = winner[1]
             winner_status = winner[2]
-            proposed_time = winner[3]
-            proposed_price = winner[4]
-            proposed_currency = winner[5]
-            partner_price = winner[6]
-            partner_currency = winner[7]
-
             if winner_status != "accepted":
                 raise HTTPException(
                     status_code=409,
@@ -221,47 +208,17 @@ def create_reservation(payload: ReservationCreate):
                     ),
                 )
 
-            # 6. Determinar hora acordada.
-            service_time = (
-                proposed_time
-                if proposed_time is not None
-                else preferred_time
-            )
-
+            # New reservations must use an immutable, explicitly accepted snapshot.
+            cur.execute("""SELECT id,amount_total,currency,service_date,service_time,passenger_count,
+                traveler_id,product_id,partner_id FROM request_offer_consents
+                WHERE service_request_id=%s AND request_partner_id=%s""",(service_request_id,request_partner_id))
+            consent=cur.fetchone()
+            if consent is None:
+                raise HTTPException(409, "Nueva reserva requiere consentimiento explícito del turista.")
+            consent_id,agreed_price,currency,service_date,service_time,passenger_count,ct,cp,partner=consent
+            if (ct,cp,partner)!=(traveler_id,product_id,assigned_partner_id):
+                raise HTTPException(409, "La reserva no coincide con el consentimiento.")
             slot_id = slot_for_reservation(cur, product_id, assigned_partner_id, service_date, service_time, passenger_count)
-
-            # 7. Determinar precio.
-            #
-            # Si existe proposed_price, se considera precio total
-            # de la contraoferta.
-            #
-            # Si no existe, partner_price se considera precio
-            # unitario por pasajero.
-            agreed_price: Optional[object] = None
-            currency = None
-
-            if proposed_price is not None:
-                agreed_price = proposed_price
-                currency = (
-                    proposed_currency
-                    or partner_currency
-                    or "PEN"
-                )
-
-            elif partner_price is not None:
-                agreed_price = (
-                    partner_price * passenger_count
-                )
-                currency = partner_currency or "PEN"
-
-            else:
-                raise HTTPException(
-                    status_code=409,
-                    detail=(
-                        "No existe un precio configurado "
-                        "para crear la reserva."
-                    ),
-                )
 
             if not Decimal(agreed_price).is_finite() or agreed_price < 0:
                 raise HTTPException(409, "El precio acordado no es válido.")
@@ -304,7 +261,7 @@ def create_reservation(payload: ReservationCreate):
                     passenger_count,
                     agreed_price,
                     currency,
-                    status, slot_id
+                    status, slot_id, consent_id
                 )
                 VALUES (
                     %s,
@@ -318,7 +275,7 @@ def create_reservation(payload: ReservationCreate):
                     %s,
                     %s,
                     %s,
-                    'awaiting_passenger_data', %s
+                    'awaiting_passenger_data', %s, %s
                 )
                 RETURNING
                     id,
@@ -339,6 +296,7 @@ def create_reservation(payload: ReservationCreate):
                     agreed_price,
                     currency,
                     slot_id,
+                    consent_id,
                 ),
             )
 

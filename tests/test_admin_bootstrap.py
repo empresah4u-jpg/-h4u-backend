@@ -93,9 +93,9 @@ def test_failure_after_insert_rolls_back(case, monkeypatch):
 def test_bootstrap_lock_excludes_concurrent_writers(case):
     bootstrap.create_first_admin(*credentials())
     # PostgreSQL retains this writer-excluding lock until the outer rollback.
-    # Do not try to lock public.users: it contains the real administrator.
+    # Resolve the fixture table: pg_temp normally, public only in disposable DBs.
     locks = case['db'].execute("""SELECT mode FROM pg_locks
-        WHERE pid=pg_backend_pid() AND relation='pg_temp.users'::regclass
+        WHERE pid=pg_backend_pid() AND relation='users'::regclass
           AND granted""").fetchall()
     assert ('ShareRowExclusiveLock',) in locks
 

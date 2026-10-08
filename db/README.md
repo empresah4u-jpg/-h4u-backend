@@ -182,3 +182,12 @@ FKs and publication status. No catalog/product provisioning is performed.
 Official entry point: `python -m scripts.apply_experience_products` (rollback only);
 `--apply` persists, `--demo` targets the isolated demo. See
 [read API and deployment contract](../docs/experience_commercial_options.md).
+
+### 013 — consentimiento inmutable de ofertas
+
+`013_offer_consent.sql`: versiones explícitas, snapshot de consentimiento y FK
+nullable para reservas históricas; sin backfill. Aplicada en DEMO y H4U tras separar migrator/runtime.
+Ejecutor oficial: `python -m scripts.apply_offer_consent --demo` (rollback);
+`--demo --apply` persiste. H4U requiere --confirm-h4u con el checksum aprobado.
+Véase [roles y permisos](../docs/database_roles.md).
+Véase [contrato y compatibilidad](../docs/offer_consent.md).

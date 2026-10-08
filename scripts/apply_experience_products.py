@@ -67,7 +67,7 @@ def main():
     if args.demo:
         run_demo(args.apply)
         return
-    from app.db import get_connection
+    from app.db import get_admin_connection as get_connection
     with get_connection() as conn:
         conn.autocommit = True
         if conn.execute('SELECT current_database()').fetchone() != ('h4u',):
