@@ -16,8 +16,8 @@ reservations payments refunds commissions commission_adjustments partner_settlem
 settlement_adjustments settlement_commissions financial_events cancellation_policy_versions
 cancellation_policy_assignments cancellation_cases commercial_product_settings commercial_slots
 refund_commands notification_events channel_threads channel_binding_events inbound_messages message_outbox
-request_offer_consents data_sources entity_sources entity_source_evidence schema_migrations'''.split()
-INSERT = '''users auth_sessions auth_login_limits partner_memberships partner_events admin_events partners
+service_request_idempotency request_offer_consents data_sources entity_sources entity_source_evidence schema_migrations'''.split()
+INSERT = '''sessions service_request_idempotency users auth_sessions auth_login_limits partner_memberships partner_events admin_events partners
 service_requests request_partners request_passengers reservations payments refunds commissions
 commission_adjustments partner_settlements settlement_adjustments settlement_commissions financial_events
 cancellation_policy_versions cancellation_policy_assignments cancellation_cases commercial_product_settings
@@ -38,7 +38,7 @@ def grant_table_access(conn, role=ROLE):
         for name in sorted(set(names)&tables):
             conn.execute(sql.SQL('GRANT {} ON TABLE {} TO {}').format(sql.SQL(permission),sql.Identifier(name),who))
     # Row locks require UPDATE on at least one column; no catalog write endpoint.
-    for table in ('products','product_partners','commission_adjustments','cancellation_policy_versions','sessions','travelers','request_passengers'):
+    for table in ('destinations','products','product_partners','commission_adjustments','cancellation_policy_versions','sessions','travelers','request_passengers'):
         conn.execute(sql.SQL('GRANT UPDATE(id) ON {} TO {}').format(sql.Identifier(table),who))
     conn.execute(sql.SQL('GRANT UPDATE(status,settled_at,updated_at) ON commissions TO {}').format(who))
     conn.execute(sql.SQL('GRANT UPDATE(first_name,last_name,birth_date,nationality_code,document_type,document_number,is_primary_passenger,updated_at) ON request_passengers TO {}').format(who))

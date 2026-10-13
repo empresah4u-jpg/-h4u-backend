@@ -21,6 +21,7 @@ from app.routers.partners import router as partners_router
 from app.routers.hotels import router as hotels_router
 from app.routers.restaurants import router as restaurants_router
 from app.routers.experiences import router as experiences_router
+from app.routers.commercial_sessions import router as commercial_sessions_router
 from app.routers.tours import router as tours_router
 from app.routers.tour_operators import router as tour_operators_router
 from app.routers.attractions import router as attractions_router
@@ -29,6 +30,8 @@ from app.routers.services import router as services_router
 from app.routers.search import router as search_router
 from app.routers.semantic_search import router as semantic_search_router
 from app.routers.service_requests import router as service_requests_router
+from app.routers.request_tracking import router as request_tracking_router
+from app.routers.reservation_tracking import router as reservation_tracking_router
 from app.routers.partner_responses import router as partner_responses_router
 from app.routers.reservations import router as reservations_router
 from app.routers.passengers import router as passengers_router
@@ -150,6 +153,7 @@ app.include_router(hotels_router)
 app.include_router(restaurants_router)
 app.include_router(tours_router)
 app.include_router(experiences_router)
+app.include_router(commercial_sessions_router)
 app.include_router(tour_operators_router)
 app.include_router(attractions_router)
 app.include_router(transport_router)
@@ -157,6 +161,8 @@ app.include_router(services_router)
 app.include_router(search_router)
 app.include_router(semantic_search_router)
 app.include_router(service_requests_router)
+app.include_router(request_tracking_router)
+app.include_router(reservation_tracking_router)
 app.include_router(partner_responses_router)
 app.include_router(reservations_router)
 app.include_router(passengers_router)

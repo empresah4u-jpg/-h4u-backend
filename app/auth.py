@@ -174,3 +174,11 @@ def authorize(action: str):
             _current_actor.reset(token)
 
     return Depends(permission)
+
+
+def recheck_principal(cur, actor):
+    """Lock/revalidate identity in the business transaction, after JWT verification."""
+    cur.execute('SELECT role,traveler_id,partner_id,status FROM users WHERE id=%s FOR SHARE', (actor.subject,))
+    row = cur.fetchone()
+    if not row or row[3] != 'active' or (row[0],row[1],row[2]) != (actor.role,actor.traveler_id,actor.partner_id):
+        raise HTTPException(403, 'La identidad cambió; vuelva a autenticarse.')

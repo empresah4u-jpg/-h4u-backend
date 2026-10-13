@@ -18,6 +18,11 @@ class DemoFailure(RuntimeError):
     pass
 
 
+def request_attempt_key(run_id, operation='primary-request'):
+    """Stable across retries of one named operation; never shared across runs."""
+    return 'demo:' + str(run_id) + ':' + operation
+
+
 def run(scenario='accept', *, exercise_lifecycle=False):
     if scenario not in {'accept','counter_offer'}: raise ValueError('Unsupported demo scenario')
     run_id=uuid4(); suffix=run_id.hex[:12]
@@ -43,7 +48,10 @@ def run(scenario='accept', *, exercise_lifecycle=False):
                     VALUES (%s,%s,%s,'active',%s)''',(email,hash_password(password),role,traveler if role=='tourist' else None))
         with TestClient(app,raise_server_exceptions=False) as client:
             def call(method,path,role=None,body=None,expected=200):
-                response=client.request(method,path,json=body,headers={'Authorization':'Bearer '+tokens[role]} if role else {})
+                headers={'Authorization':'Bearer '+tokens[role]} if role else {}
+                if method=='POST' and path=='/service-requests':
+                    headers['Idempotency-Key']=request_attempt_key(run_id)
+                response=client.request(method,path,json=body,headers=headers)
                 if response.status_code!=expected:
                     # Never include request/response bodies, passwords or access tokens in errors.
                     raise DemoFailure('Demo step failed: '+method+' '+path+' status='+str(response.status_code))

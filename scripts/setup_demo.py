@@ -77,6 +77,9 @@ def configure_runtime(password):
         GRANT USAGE ON SCHEMA public TO h4u_demo_app;
         GRANT SELECT,INSERT,UPDATE ON ALL TABLES IN SCHEMA public TO h4u_demo_app;
         GRANT USAGE,SELECT ON ALL SEQUENCES IN SCHEMA public TO h4u_demo_app;
+        DO $$ BEGIN IF to_regclass('public.service_request_idempotency') IS NOT NULL THEN
+            REVOKE UPDATE,DELETE,TRUNCATE ON service_request_idempotency FROM h4u_demo_app;
+        END IF; END $$;
         DO $$ BEGIN IF to_regclass('public.entity_source_evidence') IS NOT NULL THEN
             REVOKE UPDATE,DELETE,TRUNCATE ON entity_source_evidence FROM h4u_demo_app;
         END IF; END $$;

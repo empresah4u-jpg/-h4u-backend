@@ -2,12 +2,15 @@ from datetime import date, time
 from typing import Optional
 from uuid import UUID
 
-from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel, Field
+from fastapi import APIRouter, HTTPException, Header, Depends
+from fastapi.encoders import jsonable_encoder
+from psycopg.types.json import Jsonb
+from app.services.request_idempotency import fingerprint, replay, validate_destination_time
+from pydantic import BaseModel, Field, ConfigDict
 
 from app.services.commercial_eligibility import product_accepts_requests, ELIGIBLE_REQUEST_PARTNER_SQL
 from app.db import get_connection
-from app.auth import authorize, recheck_owner
+from app.auth import authorize, recheck_owner, recheck_principal, Principal, get_current_actor
 
 
 router = APIRouter(
@@ -17,6 +20,7 @@ router = APIRouter(
 
 
 class ServiceRequestCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     session_id: UUID
     product_id: UUID
 
@@ -38,7 +42,16 @@ class ServiceRequestCreate(BaseModel):
 
 
 @router.post("", status_code=201, dependencies=[authorize("request.create")])
-def create_service_request(payload: ServiceRequestCreate):
+def submit_service_request(payload: ServiceRequestCreate,
+                           idempotency_key: str = Header(min_length=1, max_length=200),
+                           actor: Principal = Depends(get_current_actor)):
+    if not idempotency_key.strip() or idempotency_key != idempotency_key.strip():
+        raise HTTPException(422, 'Clave de idempotencia no válida.')
+    return create_service_request(payload, idempotency_key, actor)
+
+
+def create_service_request(payload: ServiceRequestCreate, idempotency_key=None, actor=None):
+    """Trusted in-process fixtures may omit a key; the HTTP entry always requires it."""
 
     if payload.request_type not in {"request", "reservation"}:
         raise HTTPException(
@@ -60,6 +73,8 @@ def create_service_request(payload: ServiceRequestCreate):
 
     with get_connection() as conn:
         with conn.cursor() as cur:
+            if actor is not None:
+                recheck_principal(cur, actor)
             if payload.simulation:
                 cur.execute("SET LOCAL h4u.messaging_simulation = 'true'")
 
@@ -69,10 +84,9 @@ def create_service_request(payload: ServiceRequestCreate):
                 SELECT
                     s.id,
                     s.traveler_id,
-                    s.destination_id
+                    s.destination_id, s.status, s.ended_at
                 FROM sessions s
                 WHERE s.id = %s
-                  AND s.status = 'active'
                 FOR SHARE OF s
                 """,
                 (payload.session_id,),
@@ -90,6 +104,21 @@ def create_service_request(payload: ServiceRequestCreate):
             traveler_id = session[1]
             destination_id = session[2]
 
+            if traveler_id is None:
+                raise HTTPException(403, 'Se requiere una sesión con propietario.')
+            digest = fingerprint(payload)
+            if idempotency_key is not None:
+                previous = replay(cur, traveler_id, idempotency_key, digest)
+                if previous is not None:
+                    return previous
+            if session[3] != 'active' or session[4] is not None:
+                raise HTTPException(409, 'La sesión comercial está cerrada.')
+            cur.execute('SELECT timezone,status FROM destinations WHERE id=%s FOR SHARE', (destination_id,))
+            destination = cur.fetchone()
+            if not destination or destination[1] != 'active':
+                raise HTTPException(409, 'Destino no disponible.')
+            validate_destination_time(payload, destination[0])
+
             # 2. Validar producto.
             cur.execute(
                 """
@@ -101,6 +130,7 @@ def create_service_request(payload: ServiceRequestCreate):
                     p.reservations_enabled
                 FROM products p
                 WHERE p.id = %s
+                FOR SHARE OF p
                 """,
                 (payload.product_id,),
             )
@@ -156,7 +186,8 @@ def create_service_request(payload: ServiceRequestCreate):
                       AND p.status IN ('pending', 'active')
                     ORDER BY
                         pp.priority DESC,
-                        p.business_name
+                        p.business_name, p.id
+                    FOR SHARE OF pp,p
                     """,
                     (payload.product_id,),
                 )
@@ -180,12 +211,15 @@ def create_service_request(payload: ServiceRequestCreate):
                       AND {ELIGIBLE_REQUEST_PARTNER_SQL}
                     ORDER BY
                         pp.priority DESC,
-                        p.business_name
+                        p.business_name, p.id
+                    FOR SHARE OF pp,p
                     """,
                     (payload.product_id,),
                 )
 
             candidates = cur.fetchall()
+            if not candidates:
+                raise HTTPException(409, 'No hay partners elegibles para este producto.')
 
             # 5. Generar código único.
             cur.execute(
@@ -329,23 +363,28 @@ def create_service_request(payload: ServiceRequestCreate):
                     }
                 )
 
+        result = jsonable_encoder({
+            "id": str(created[0]),
+            "code": created[1],
+            "status": created[2],
+            "simulation": payload.simulation,
+            "created_at": created[3],
+            "product": {
+                "id": str(product[0]),
+                "name": product[2],
+            },
+            "passengers": {
+                "total": payload.passenger_count,
+                "adults": payload.adults_count,
+                "minors": payload.minors_count,
+            },
+            "candidate_count": len(selected_partners),
+            "candidates": selected_partners,
+        })
+        if idempotency_key is not None:
+            conn.execute('''INSERT INTO service_request_idempotency
+                (traveler_id,idempotency_key,request_fingerprint,service_request_id,response_status,response_body)
+                VALUES (%s,%s,%s,%s,201,%s)''',
+                (traveler_id,idempotency_key,digest,created[0],Jsonb(result)))
         conn.commit()
-
-    return {
-        "id": str(created[0]),
-        "code": created[1],
-        "status": created[2],
-        "simulation": payload.simulation,
-        "created_at": created[3],
-        "product": {
-            "id": str(product[0]),
-            "name": product[2],
-        },
-        "passengers": {
-            "total": payload.passenger_count,
-            "adults": payload.adults_count,
-            "minors": payload.minors_count,
-        },
-        "candidate_count": len(selected_partners),
-        "candidates": selected_partners,
-    }
+        return result

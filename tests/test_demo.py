@@ -1,4 +1,4 @@
-"""Demo isolation guards plus persistent flows in h4u_demo only; no real transfers."""
+"""Demo isolation guards and real flows, exclusively in a disposable container."""
 import os
 import secrets
 from uuid import uuid4
@@ -8,6 +8,19 @@ from app.demo.safety import configure,verify
 from app.demo.provider import FakeProvider
 from app.messaging.provider import MetaProvider,Settings,SendError
 from app import db
+
+
+@pytest.fixture(scope='module', autouse=True)
+def disposable_demo_only():
+    """Never let configure() redirect this suite to the persistent demo."""
+    import subprocess
+    name=os.environ.get('H4U_TEST_DEMO_CONTAINER','')
+    if not name.startswith('h4u-test-demo-'):
+        raise RuntimeError('Run with scripts.test_backend_isolated --group demo; persistent DEMO is forbidden')
+    result=subprocess.run(['docker','inspect','-f','{{index .Config.Labels "com.h4u.test"}}',name],capture_output=True,text=True,check=True)
+    assert result.stdout.strip()=='disposable'
+    port=subprocess.run(['docker','port',name,'5432/tcp'],capture_output=True,text=True,check=True).stdout.strip().rsplit(':',1)[1]
+    assert os.environ.get('DEMO_DB_HOST')=='127.0.0.1' and os.environ.get('DEMO_DB_PORT')==port
 
 
 @pytest.mark.parametrize('enabled,name',[('true','h4u'),('false','h4u_demo')])

@@ -18,6 +18,11 @@ from app.services.passwords import hash_password
 from scripts.setup_runtime import grant_table_access
 
 
+class PrivateHeaders(dict):
+    def __repr__(self):
+        return '<test credentials redacted>'
+
+
 @pytest.fixture
 def e2e(monkeypatch):
     assert os.getenv('DB_NAME','').startswith('h4u_ingestion_test_'), 'Disposable DB required'
@@ -26,6 +31,8 @@ def e2e(monkeypatch):
     assert db.execute('SELECT current_database()').fetchone()[0]==os.environ['DB_NAME']
     db.execute(sql.SQL('GRANT CONNECT ON DATABASE {} TO {}').format(sql.Identifier(os.environ['DB_NAME']),sql.Identifier(role)))
     db.execute(sql.SQL('GRANT USAGE ON SCHEMA public TO {}').format(sql.Identifier(role)))
+    from scripts.apply_request_idempotency import apply
+    with db.transaction(): apply(db,role)
     grant_table_access(db,role)
     pids=set()
     @contextmanager
@@ -36,6 +43,8 @@ def e2e(monkeypatch):
             c.execute("SET lock_timeout='5s'; SET statement_timeout='10s'");c.commit()
             pids.add(c.info.backend_pid)
             yield c
+    from app.db import get_connection as original_connection
+    initial_modules=set(sys.modules)
     # Every HTTP auth/router/service uses a genuine restricted LOGIN, no actor override.
     for name,module in list(sys.modules.items()):
         if name.startswith('app.') and hasattr(module,'get_connection'):
@@ -60,21 +69,26 @@ def e2e(monkeypatch):
             db.execute("INSERT INTO partner_memberships(partner_id,user_id,membership_role,status) VALUES (%s,%s,'owner','active')",(partner,uid))
             users[name]=dict(id=uid,email=email)
     try:
-        with TestClient(app) as client:
+        with TestClient(app, client=('test-'+token,50000)) as client:
             headers={}
             for name,u in users.items():
                 login=client.post('/auth/login',json={'email':u['email'],'password':password})
                 assert login.status_code==200
-                headers[name]={'Authorization':'Bearer '+login.json()['access_token']}
+                headers[name]=PrivateHeaders(Authorization='Bearer '+login.json()['access_token'])
             yield dict(db=db,client=client,headers=headers,users=users,partners=partners,product=product,destination=d,runtime=runtime,pids=pids)
     finally:
+        # Imports during the fixture can capture its patched connection function.
+        # Restore those late imports as well as monkeypatch-managed original modules.
+        for name,module in list(sys.modules.items()):
+            if name not in initial_modules and name.startswith('app.') and getattr(module,'get_connection',None) is runtime:
+                module.get_connection=original_connection
         db.close()
     # All committed TEST rows are confined to the runner-owned disposable DB.
 
 
 def request(c,owner='tourist'):
     body=dict(session_id=str(c['users'][owner]['session']),product_id=str(c['product']),service_date=str(date.today()+timedelta(days=7)),preferred_time='09:00',flexible_time=True,passenger_count=2,adults_count=2,minors_count=0,additional_notes='TEST: two adults, no transfer')
-    r=c['client'].post('/service-requests',json=body,headers=c['headers'][owner]);assert r.status_code==201,r.text
+    r=c['client'].post('/service-requests',json=body,headers={**c['headers'][owner],'Idempotency-Key':str(uuid4())});assert r.status_code==201,r.text
     req=r.json()
     rows=c['db'].execute('SELECT id,partner_id FROM request_partners WHERE service_request_id=%s',(req['id'],)).fetchall()
     assert {row[1] for row in rows}=={c['partners']['A'],c['partners']['B']}

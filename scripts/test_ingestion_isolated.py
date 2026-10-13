@@ -29,11 +29,11 @@ def main():
         created_runtime=True
         docker(['createdb','-U',ADMIN,'-O',role,database]);created_db=True
         sql('postgres',f'REVOKE ALL ON DATABASE {database} FROM PUBLIC;')
-        schema=docker(['pg_dump','-U',ADMIN,'-d','h4u_demo','--schema-only','--no-owner','--no-privileges','--exclude-table=public.ingestion_plans','--exclude-table=public.ingestion_embedding_jobs'])
+        schema=docker(['pg_dump','-U',ADMIN,'-d','h4u_demo','--schema-only','--no-owner','--no-privileges','--exclude-table=public.ingestion_plans','--exclude-table=public.ingestion_embedding_jobs','--exclude-table=public.service_request_idempotency'])
         sql(database,schema)
         # Keep the baseline at 010 even after persistent demo deploys 011.
         # These are installer-created objects in this new, empty disposable DB only.
-        sql(database,'DROP FUNCTION IF EXISTS public.ingestion_plan_guard(), public.ingestion_plan_committed(), public.ingestion_job_guard(), public.lock_ingestion_source_evidence();')
+        sql(database,'DROP FUNCTION IF EXISTS public.ingestion_plan_guard(), public.ingestion_plan_committed(), public.ingestion_job_guard(), public.lock_ingestion_source_evidence(), public.immutable_service_request_attempt();')
         sql(database,f'GRANT ALL ON SCHEMA public TO {role}; GRANT ALL ON ALL TABLES IN SCHEMA public TO {role} WITH GRANT OPTION; GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO {role};')
         from hashlib import sha256
         ledger=''.join("INSERT INTO schema_migrations(version,checksum) VALUES ('"+p.name+"','"+sha256(p.read_bytes()).hexdigest()+"');" for p in sorted(Path('db/migrations').glob('*.sql')) if '002_'<=p.name<='010_entity_source_evidence.sql')
